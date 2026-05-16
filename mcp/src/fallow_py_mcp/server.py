@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 from typing import Any
 
@@ -21,13 +22,16 @@ SERVER_INSTRUCTIONS = (
     "Use fallow-py tools before committing or showing Python code changes. "
     "Treat high-confidence findings as actionable and low-confidence findings as review context."
 )
+SANDBOX_ENV = "FALLOW_PY_MCP_SANDBOX_ROOT"
+LEGACY_SANDBOX_ENV = "PYFALLOW_MCP_SANDBOX_ROOT"
 
 
 def build_server(default_root: str | Path | None = None) -> FastMCP:
     server = FastMCP("pyfallow", version=VERSION, instructions=SERVER_INSTRUCTIONS)
+    sandbox_root = _sandbox_root(default_root)
 
     def root_or_default(root: str | Path | None = None) -> str:
-        return str(Path(root or default_root or ".").resolve())
+        return str(_validated_root(root or default_root or ".", sandbox_root))
 
     @server.tool
     def analyze_diff(
@@ -79,6 +83,50 @@ def build_server(default_root: str | Path | None = None) -> FastMCP:
         )
 
     return server
+
+
+def _sandbox_root(default_root: str | Path | None) -> Path | None:
+    configured = os.environ.get(SANDBOX_ENV) or os.environ.get(LEGACY_SANDBOX_ENV)
+    if configured:
+        return Path(configured).expanduser().resolve()
+    if default_root is not None:
+        return Path(default_root).expanduser().resolve()
+    return None
+
+
+def _validated_root(root: str | Path, sandbox_root: Path | None) -> Path:
+    resolved = Path(root).expanduser().resolve()
+    if _is_protected_root(resolved):
+        raise ValueError(f"Refusing to analyze unsafe MCP root: {resolved}")
+    if sandbox_root is not None and not _is_inside(resolved, sandbox_root):
+        raise ValueError(
+            f"Requested root {resolved} is outside the MCP sandbox {sandbox_root}."
+        )
+    return resolved
+
+
+def _is_inside(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _is_protected_root(path: Path) -> bool:
+    protected = {
+        Path("/").resolve(),
+        Path.home().resolve(),
+        Path("/bin").resolve(),
+        Path("/etc").resolve(),
+        Path("/sbin").resolve(),
+        Path("/usr").resolve(),
+    }
+    for raw in ("/Library", "/System", "/private/etc"):
+        candidate = Path(raw)
+        if candidate.exists():
+            protected.add(candidate.resolve())
+    return path in protected
 
 
 def main(argv: list[str] | None = None, *, prog: str = "fallow-py-mcp") -> int:

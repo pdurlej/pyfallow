@@ -378,6 +378,30 @@ def test_full_analysis_reports_required_signals(tmp_path: Path) -> None:
     )
 
 
+def test_discovery_skips_symlink_escape_files_and_roots(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    outside = tmp_path / "outside"
+    write(
+        root / "pyproject.toml",
+        """
+        [tool.fallow_py]
+        roots = ["src", "linked"]
+        entry = ["src/app.py"]
+        """,
+    )
+    write(root / "src/app.py", "def main():\n    return 1\n")
+    write(outside / "leaked.py", "def outside_only():\n    return 1\n")
+    (root / "src/leaked.py").symlink_to(outside / "leaked.py")
+    (root / "linked").symlink_to(outside, target_is_directory=True)
+
+    result = analyze_fixture(root)
+
+    module_paths = {module["path"] for module in result["graphs"]["modules"]}
+    assert module_paths == {"src/app.py"}
+    assert not any(str(outside) in path for path in module_paths)
+    assert not any(str(outside) in issue.get("path", "") for issue in result["issues"])
+
+
 def test_import_resolution_dependency_mapping_and_type_checking(tmp_path: Path) -> None:
     root = make_fixture_project(tmp_path)
     result = analyze_fixture(root)
