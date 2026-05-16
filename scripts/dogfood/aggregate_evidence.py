@@ -26,7 +26,8 @@ REPORT_NAMES = {
     "fallow-py-report.json",
     "fallow-report.json",
 }
-CLASSIFICATION_GROUPS = ("auto_safe", "review_needed", "blocking", "manual_only")
+CLASSIFICATION_GROUPS = ("auto_safe", "review_needed", "decision_needed", "blocking", "manual_only")
+UNCLASSIFIED_GROUP = "unclassified"
 
 
 @dataclass(slots=True)
@@ -68,6 +69,12 @@ class EvidenceSummary:
         confidences = Counter(finding.confidence for finding in self.findings)
         rules = Counter(finding.rule for finding in self.findings)
         repos = Counter(finding.repo for finding in self.findings)
+        unclassified = categories.get(UNCLASSIFIED_GROUP, 0)
+        operator_attention = (
+            categories.get("blocking", 0)
+            + categories.get("decision_needed", 0)
+            + categories.get("review_needed", 0)
+        )
         return {
             "schema": "fallow_py_dogfood_evidence.v1",
             "generated_at": self.generated_at,
@@ -75,6 +82,10 @@ class EvidenceSummary:
             "run_count": len(self.runs),
             "report_count": len(self.report_paths),
             "finding_count": len(self.findings),
+            "classified_finding_count": len(self.findings) - unclassified,
+            "unclassified_finding_count": unclassified,
+            "operator_attention_count": operator_attention,
+            "warning_count": len(self.warnings),
             "run_statuses": dict(sorted(run_statuses.items())),
             "finding_categories": dict(sorted(categories.items())),
             "finding_severities": dict(sorted(severities.items())),
@@ -175,7 +186,9 @@ def collect_reports(entries: list[str], *, default_repo: str) -> tuple[list[Find
                 warnings.append(f"{repo}: skipped {report_path}: {exc}")
                 continue
             report_paths.append(str(report_path))
-            findings.extend(extract_findings(payload, repo=repo))
+            extracted, extraction_warnings = extract_findings(payload, repo=repo, report_path=report_path)
+            findings.extend(extracted)
+            warnings.extend(extraction_warnings)
     return findings, report_paths, warnings
 
 
@@ -197,28 +210,44 @@ def find_report_files(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("*.json") if path.name in REPORT_NAMES)
 
 
-def extract_findings(report: dict[str, Any], *, repo: str) -> list[FindingRecord]:
+def extract_findings(report: dict[str, Any], *, repo: str, report_path: Path | None = None) -> tuple[list[FindingRecord], list[str]]:
     findings: list[FindingRecord] = []
     for group in CLASSIFICATION_GROUPS:
         for item in report.get(group, []) or []:
             if isinstance(item, dict):
                 findings.append(finding_from_dict(item, repo=repo, group=group))
     if findings:
-        return findings
+        return findings, []
+
+    unclassified_count = 0
     for item in report.get("issues", []) or []:
         if isinstance(item, dict):
-            findings.append(finding_from_dict(item, repo=repo, group=classify_plain_issue(item)))
-    return findings
+            group = plain_issue_classification(item)
+            if group == UNCLASSIFIED_GROUP:
+                unclassified_count += 1
+            findings.append(finding_from_dict(item, repo=repo, group=group))
+    warnings: list[str] = []
+    if unclassified_count:
+        source = str(report_path) if report_path else "report"
+        warnings.append(
+            f"{repo}: {source} has {unclassified_count} issue(s) without agent-fix-plan classification; "
+            f"counted as {UNCLASSIFIED_GROUP}."
+        )
+    return findings, warnings
 
 
-def classify_plain_issue(issue: dict[str, Any]) -> str:
-    severity = str(issue.get("severity", "") or "").lower()
-    confidence = str(issue.get("confidence", "") or "").lower()
-    if severity == "error" or (severity == "warning" and confidence == "high"):
-        return "blocking"
-    if severity == "info":
-        return "auto_safe"
-    return "review_needed"
+def plain_issue_classification(issue: dict[str, Any]) -> str:
+    raw = str(issue.get("classification") or issue.get("decision") or issue.get("group") or "").strip()
+    aliases = {
+        "safe-auto": "auto_safe",
+        "review-needed": "review_needed",
+        "decision-needed": "decision_needed",
+        "manual-only": "manual_only",
+    }
+    group = aliases.get(raw, raw)
+    if group in CLASSIFICATION_GROUPS:
+        return group
+    return UNCLASSIFIED_GROUP
 
 
 def finding_from_dict(item: dict[str, Any], *, repo: str, group: str) -> FindingRecord:
@@ -246,6 +275,13 @@ def render_markdown(summary: EvidenceSummary) -> str:
         f"- Forgejo runs observed: {data['run_count']}",
         f"- Report artifacts parsed: {data['report_count']}",
         f"- Findings observed: {data['finding_count']}",
+        "",
+        "## Evidence Quality",
+        "",
+        f"- Classified findings: {data['classified_finding_count']}",
+        f"- Unclassified findings: {data['unclassified_finding_count']}",
+        f"- Operator-attention findings: {data['operator_attention_count']}",
+        f"- Warnings: {data['warning_count']}",
         "",
     ]
     lines.extend(counter_section("Run Statuses", data["run_statuses"]))
