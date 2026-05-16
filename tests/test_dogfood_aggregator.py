@@ -81,7 +81,7 @@ def test_aggregates_agent_fix_plan_reports(tmp_path: Path) -> None:
     assert "`missing-runtime-dependency`: 1" in markdown
 
 
-def test_aggregates_plain_json_reports_with_classification_fallback(tmp_path: Path) -> None:
+def test_aggregates_plain_json_reports_as_unclassified_without_policy_guessing(tmp_path: Path) -> None:
     aggregator = load_aggregator()
     report_path = tmp_path / "pyfallow-report.json"
     write_json(
@@ -108,11 +108,49 @@ def test_aggregates_plain_json_reports_with_classification_fallback(tmp_path: Pa
 
     findings, reports, warnings = aggregator.collect_reports([str(report_path)], default_repo="owner/repo")
 
+    assert len(warnings) == 1
+    assert "counted as unclassified" in warnings[0]
+    assert reports == [str(report_path)]
+    assert [(finding.group, finding.rule) for finding in findings] == [
+        ("unclassified", "boundary-violation"),
+        ("unclassified", "dynamic-import"),
+    ]
+
+
+def test_plain_json_reports_can_use_explicit_classification(tmp_path: Path) -> None:
+    aggregator = load_aggregator()
+    report_path = tmp_path / "pyfallow-report.json"
+    write_json(
+        report_path,
+        {
+            "issues": [
+                {
+                    "rule": "dynamic-import",
+                    "severity": "info",
+                    "confidence": "low",
+                    "classification": "review_needed",
+                    "fingerprint": "2",
+                    "path": "src/plugin.py",
+                },
+                {
+                    "rule": "unused-symbol",
+                    "severity": "warning",
+                    "confidence": "medium",
+                    "decision": "decision-needed",
+                    "fingerprint": "3",
+                    "path": "src/legacy.py",
+                },
+            ]
+        },
+    )
+
+    findings, reports, warnings = aggregator.collect_reports([str(report_path)], default_repo="owner/repo")
+
     assert warnings == []
     assert reports == [str(report_path)]
     assert [(finding.group, finding.rule) for finding in findings] == [
-        ("blocking", "boundary-violation"),
-        ("auto_safe", "dynamic-import"),
+        ("review_needed", "dynamic-import"),
+        ("decision_needed", "unused-symbol"),
     ]
 
 
@@ -181,4 +219,7 @@ def test_cli_writes_markdown_and_json_outputs(tmp_path: Path) -> None:
     assert "`circular-dependency`: 1" in output.read_text(encoding="utf-8")
     payload = json.loads(json_output.read_text(encoding="utf-8"))
     assert payload["finding_count"] == 1
+    assert payload["classified_finding_count"] == 1
+    assert payload["unclassified_finding_count"] == 0
+    assert payload["operator_attention_count"] == 1
     assert payload["reports"] == [str(report_dir / "pyfallow-report.json")]

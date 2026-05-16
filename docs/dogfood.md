@@ -2,7 +2,7 @@
 
 **Audience:** maintainers integrating fallow-py into Python repositories, plus agents setting up such a CI pipeline.
 
-**Status:** v1, written 2026-05-04. Tested against fallow-py `0.3.0a3` on TestPyPI.
+**Status:** v1, written 2026-05-04 and kept current through the `0.3.0a3` alpha line.
 
 **Why:** see [`docs/philosophy.md`](philosophy.md). Short version: a non-technical operator running multi-agent codebases needs a deterministic gate between agent commits and `main`.
 
@@ -43,7 +43,7 @@ curl -sSL https://raw.githubusercontent.com/pdurlej/fallow-py/main/examples/ci/f
 
 ### Step 2 — pin a fallow-py version
 
-The shipped template installs the latest `fallow-py` from PyPI. During alpha (pre-`0.3.0` stable), pin to a specific TestPyPI version to avoid surprise breaks:
+The shipped template installs the latest `fallow-py` from PyPI. During alpha (pre-`0.3.0` stable), pin to a specific wheel or TestPyPI version only after that artifact has been published and smoke-tested:
 
 ```yaml
 # In .forgejo/workflows/fallow-py.yml, replace the install step with:
@@ -52,12 +52,13 @@ The shipped template installs the latest `fallow-py` from PyPI. During alpha (pr
         run: |
           python -m pip install --upgrade pip
           python -m pip install \
-            --index-url https://test.pypi.org/simple/ \
-            --extra-index-url https://pypi.org/simple/ \
             "fallow-py==0.3.0a3"
 ```
 
-Once fallow-py lands on production PyPI as `0.3.0` stable, switch to `pip install fallow-py~=0.3.0` and remove the `--index-url` flags.
+If the alpha is published only to TestPyPI, add `--index-url https://test.pypi.org/simple/`
+and `--extra-index-url https://pypi.org/simple/` after the TestPyPI smoke passes. Once
+fallow-py lands on production PyPI as `0.3.0` stable, switch to `pip install
+fallow-py~=0.3.0`.
 
 ### Step 3 — configure fallow-py for your repo
 
@@ -177,7 +178,7 @@ For agents using MCP transport (Claude Code, Cursor with MCP, etc.), `fallow-py-
 - `agent_context(root, scope)` — full project overview for an agent starting cold
 - `explain_finding(root, fingerprint)` — investigation hints + fix options for one finding
 
-Install: `pip install fallow-py-mcp==0.1.0a3` (TestPyPI alpha, pinned alongside fallow-py `0.3.0a3`).
+Install: `pip install fallow-py-mcp==0.1.0a3` after the corresponding alpha artifact is published and smoke-tested.
 
 Wire into your agent's MCP config (Claude Code example):
 
@@ -228,6 +229,10 @@ python scripts/dogfood/aggregate_evidence.py \
 If artifact download is handled by a separate rs2000 job, point `--artifacts-dir`
 at the extracted artifact tree. The aggregator does not need maintainer credentials
 unless it is reading private Forgejo run metadata.
+
+Prefer `--format agent-fix-plan` reports for dogfood artifacts. Plain JSON reports
+do not carry action-policy buckets, so the aggregator counts those findings as
+`unclassified` unless each issue already includes an explicit classification field.
 
 ## When fallow-py is wrong
 
