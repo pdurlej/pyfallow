@@ -10,6 +10,11 @@ python -m pip install -e .
 fallow-py-mcp --root /path/to/repo
 ```
 
+The `--root` value is also the default MCP sandbox. Tool calls that pass an
+explicit `root` outside that directory are rejected. You can override the
+sandbox boundary with `FALLOW_PY_MCP_SANDBOX_ROOT` when a supervisor launches the
+server from a different working directory.
+
 Claude Code `mcp.json` example:
 
 ```json

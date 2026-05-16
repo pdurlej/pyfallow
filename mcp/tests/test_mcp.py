@@ -12,7 +12,9 @@ import tomllib
 from pathlib import Path
 from urllib.parse import quote
 
+import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 from fallow_py_mcp.runtime import REPORT_CACHE, cached_report
 from fallow_py_mcp.server import build_server
@@ -175,6 +177,22 @@ def test_mcp_server_lists_expected_capabilities(tmp_path: Path) -> None:
             assert "pyfallow://module-graph/{root}" in templates
             prompts = {prompt.name for prompt in await client.list_prompts()}
             assert {"pre-commit-check", "pr-cleanup"} <= prompts
+
+    asyncio.run(scenario())
+
+
+def test_mcp_rejects_roots_outside_default_sandbox(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside"
+    write(workspace / "pyproject.toml", "[tool.fallow_py]\nroots = ['src']\n")
+    write(workspace / "src/app.py", "def main():\n    return 1\n")
+    write(outside / "pyproject.toml", "[tool.fallow_py]\nroots = ['src']\n")
+    write(outside / "src/app.py", "def main():\n    return 1\n")
+
+    async def scenario() -> None:
+        async with Client(build_server(default_root=workspace)) as client:
+            with pytest.raises(ToolError, match="outside the MCP sandbox"):
+                await client.call_tool("analyze_diff", {"root": str(outside), "since": "HEAD~1"})
 
     asyncio.run(scenario())
 
