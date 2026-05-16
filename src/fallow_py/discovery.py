@@ -12,14 +12,24 @@ COMMON_SOURCE_DIRS = ["src", "app", "backend", "server", "service"]
 
 def discover_source_roots(config: PythonConfig) -> list[Path]:
     root = config.root
+    resolved_root = root.resolve()
     if config.roots:
-        roots = [(root / item).resolve() for item in config.roots]
-        return _dedupe_preserving_order(path for path in roots if path.exists())
+        roots = []
+        for item in config.roots:
+            path = root / item
+            if path.exists() and not path.is_symlink() and _is_inside(path.resolve(), resolved_root):
+                roots.append(path.resolve())
+        return _dedupe_preserving_order(roots)
 
     candidates: list[Path] = []
     for name in COMMON_SOURCE_DIRS:
         path = root / name
-        if path.is_dir() and any(path.rglob("*.py")):
+        if (
+            path.is_dir()
+            and not path.is_symlink()
+            and _is_inside(path.resolve(), resolved_root)
+            and any(path.rglob("*.py"))
+        ):
             candidates.append(path.resolve())
 
     root_py_files = list(root.glob("*.py"))
@@ -27,6 +37,8 @@ def discover_source_roots(config: PythonConfig) -> list[Path]:
         item
         for item in root.iterdir()
         if item.is_dir()
+        and not item.is_symlink()
+        and _is_inside(item.resolve(), resolved_root)
         and not item.name.startswith(".")
         and (item / "__init__.py").exists()
         and not matches_any(item.name + "/", config.ignore)
@@ -56,11 +68,18 @@ def _dedupe_preserving_order(paths: Iterable[Path]) -> list[Path]:
 
 def discover_python_files(config: PythonConfig, source_roots: list[Path]) -> list[Path]:
     root = config.root
+    resolved_root = root.resolve()
     files: dict[str, Path] = {}
     for source_root in source_roots:
-        if not source_root.exists():
+        if (
+            not source_root.exists()
+            or source_root.is_symlink()
+            or not _is_inside(source_root.resolve(), resolved_root)
+        ):
             continue
         for path in source_root.rglob("*.py"):
+            if path.is_symlink() or not _is_inside(path.resolve(), resolved_root):
+                continue
             relative = relpath(path, root)
             if matches_any(relative, config.ignore):
                 continue
@@ -95,4 +114,12 @@ def _regular_package_path(path: Path, source_root: Path) -> bool:
         current = current / part
         if not (current / "__init__.py").exists():
             return False
+    return True
+
+
+def _is_inside(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
     return True

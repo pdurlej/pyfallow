@@ -11,6 +11,9 @@ fallow-py-mcp --root /absolute/path/to/repo
 ```
 
 The core `fallow-py` package remains stdlib-only at runtime. MCP dependencies live in the separate `fallow-py-mcp` package.
+The MCP server treats `--root` as its sandbox boundary: tool calls that pass a
+different `root` outside that directory are rejected. Supervisors that need a
+different boundary can set `FALLOW_PY_MCP_SANDBOX_ROOT`.
 
 ## Claude Code
 
