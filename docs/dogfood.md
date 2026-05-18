@@ -26,7 +26,19 @@ The agent that opened the PR (Codex, Claude, etc.) gets a deterministic answer t
 - Python project with at least one `pyproject.toml` declaring entry points
 - The repo's runner can pull container images and install Python packages from PyPI (or TestPyPI during fallow-py alpha)
 
-## Minimal integration (3 steps)
+## Minimal integration (4 steps)
+
+### Step 0 - run first-run doctor
+
+Before adding CI, run a read-only preflight from the project root:
+
+```bash
+fallow-py doctor --root .
+```
+
+This reports the discovered config, source roots, entrypoints, Git diff
+availability, and next commands. If it says no config file was found, add the
+minimal `.fallow-py.toml` in Step 3 before treating CI output as stable.
 
 ### Step 1 — copy the workflow
 
@@ -81,6 +93,14 @@ entry = ["src/yourproject/main.py", "src/yourproject/cli.py"]
 ```
 
 Then commit, push, open a PR. The runner pulls fallow-py, runs analyze on your diff, posts the comment, fails on blocking findings.
+
+Run doctor again after adding the config:
+
+```bash
+fallow-py doctor --root . --format json
+```
+
+Agents can keep this JSON as first-run evidence before enabling the CI gate.
 
 ## Reading the CI comment as operator
 

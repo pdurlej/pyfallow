@@ -4,6 +4,15 @@ These templates run fallow-py as a platform-neutral cleanup gate for Python repo
 
 Copy the full `examples/ci/` directory into your repository, then copy the platform template into the platform-specific workflow location.
 
+Before copying CI into a new repository, run:
+
+```bash
+fallow-py doctor --root .
+```
+
+The command is read-only. It confirms the config file, source roots, inferred or
+configured entrypoints, and Git diff availability before the CI gate is enabled.
+
 ## Forgejo Actions
 
 Forgejo is listed first because fallow-py is designed for self-hosted git from day one.

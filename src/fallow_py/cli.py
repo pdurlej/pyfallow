@@ -10,6 +10,7 @@ from typing import Any
 from .analysis import LIMITATIONS, analyze, filter_result
 from .baseline import compare_with_baseline, create_baseline, read_baseline, write_baseline
 from .config import load_config
+from .doctor import doctor_payload, format_doctor_text
 from .formatters import format_agent_context, format_result
 from .models import CONFIDENCE_ORDER, SEVERITY_ORDER, VERSION
 from .rule_explain import explain_all_rules, explain_rule, render_explanation
@@ -39,6 +40,8 @@ def main(argv: list[str] | None = None, *, prog: str = "fallow-py") -> int:
             return _run_explain(args)
         if args.command == "baseline":
             return _run_baseline(args)
+        if args.command == "doctor":
+            return _run_doctor(args)
         return _run_analysis(args)
     except (FileNotFoundError, ValueError, OSError, json.JSONDecodeError) as exc:
         if not getattr(args, "quiet", False):
@@ -60,6 +63,8 @@ def build_parser(prog: str = "fallow-py") -> argparse.ArgumentParser:
     _add_common(create)
     compare = baseline_sub.add_parser("compare")
     _add_common(compare)
+    doctor = sub.add_parser("doctor")
+    _add_doctor(doctor)
     explain = sub.add_parser("explain", help="Explain a fallow-py rule id or slug.")
     explain.add_argument("rule", nargs="?", help="Rule slug such as unused-symbol, or id such as PY031.")
     explain.add_argument("--all", action="store_true", help="Show all rule explanations.")
@@ -97,6 +102,18 @@ def _add_common(parser: argparse.ArgumentParser, agent_context: bool = False, gr
         default="auto",
     )
     parser.add_argument("--show-limitations", action="store_true")
+
+
+def _add_doctor(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--root", default=".")
+    parser.add_argument("--config")
+    parser.add_argument("--format", choices=["text", "json"], default="text")
+    parser.add_argument("--output")
+    tests = parser.add_mutually_exclusive_group()
+    tests.add_argument("--include-tests", action="store_true")
+    tests.add_argument("--exclude-tests", action="store_true")
+    parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--debug", action="store_true")
 
 
 def _run_analysis(args: argparse.Namespace) -> int:
@@ -146,6 +163,21 @@ def _run_baseline(args: argparse.Namespace) -> int:
     output = _with_limitations(output, args.format, args.show_limitations)
     _write_or_print(output, args.output)
     return _exit_code(filtered, args.fail_on, baseline_active=True)
+
+
+def _run_doctor(args: argparse.Namespace) -> int:
+    config = load_config(args.root, args.config)
+    _apply_doctor_config(config, args)
+    result = analyze(config)
+    _log_analysis_warnings(args, result)
+    payload = doctor_payload(config, result, args.root)
+    output = (
+        json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        if args.format == "json"
+        else format_doctor_text(payload)
+    )
+    _write_or_print(output, args.output)
+    return 0
 
 
 def _run_explain(args: argparse.Namespace) -> int:
@@ -211,6 +243,13 @@ def _apply_cli_config(config, args: argparse.Namespace) -> None:
         config.changed_only_requested = True
         config.changed_only_alias = True
         config.since_ref = "HEAD~1"
+
+
+def _apply_doctor_config(config, args: argparse.Namespace) -> None:
+    if args.include_tests:
+        config.include_tests = True
+    if args.exclude_tests:
+        config.include_tests = False
 
 
 def _format_for_command(result: dict[str, Any], command: str, fmt: str) -> str:
