@@ -416,8 +416,40 @@ def test_safe_to_remove_classifies_unknown_fingerprints_deterministically(tmp_pa
 
     result = asyncio.run(call_tool("safe_to_remove", {"root": str(tmp_path), "fingerprints": fingerprints}))
 
-    assert sorted(result) == fingerprints
-    assert {item["decision"] for item in result.values()} == {"decision_needed"}
+    assert result["unrecognized"] == fingerprints
+    assert sorted(result["classifications"]) == fingerprints
+    assert {item["decision"] for item in result["classifications"].values()} == {"decision_needed"}
+    assert {item["recognized"] for item in result["classifications"].values()} == {False}
+    assert all(item["decision"] != "auto_safe" for item in result["classifications"].values())
+    assert all("not found" in item["rationale"] for item in result["classifications"].values())
+    assert all(item["trade_offs"] for item in result["classifications"].values())
+
+
+def test_safe_to_remove_separates_unrecognized_from_recognized(tmp_path: Path) -> None:
+    write(
+        tmp_path / "pyproject.toml",
+        """
+        [tool.fallow_py]
+        roots = ["src"]
+        entry = ["src/app.py"]
+        """,
+    )
+    write(tmp_path / "src/app.py", "def main():\n    return 1\n")
+    write(tmp_path / "src/unused.py", "def orphan():\n    return 1\n")
+    REPORT_CACHE.clear()
+    report = cached_report(tmp_path)
+    recognized = next(issue["fingerprint"] for issue in report["issues"] if issue["rule"] == "unused-module")
+
+    result = asyncio.run(
+        call_tool("safe_to_remove", {"root": str(tmp_path), "fingerprints": [recognized, "missing-fp"]})
+    )
+
+    assert result["unrecognized"] == ["missing-fp"]
+    assert set(result["classifications"]) == {recognized, "missing-fp"}
+    assert result["classifications"][recognized]["recognized"] is True
+    assert result["classifications"]["missing-fp"]["recognized"] is False
+    assert result["classifications"]["missing-fp"]["decision"] == "decision_needed"
+    assert result["classifications"]["missing-fp"]["trade_offs"]
 
 
 def test_resources_return_report_and_module_graph(tmp_path: Path) -> None:

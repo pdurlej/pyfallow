@@ -175,3 +175,9 @@ class Classification(BaseModel):
     decision: ClassificationDecision
     rationale: str
     trade_offs: list[str]
+    recognized: bool = True
+
+
+class SafeToRemoveResult(BaseModel):
+    classifications: dict[str, Classification] = Field(default_factory=dict)
+    unrecognized: list[str] = Field(default_factory=list)
