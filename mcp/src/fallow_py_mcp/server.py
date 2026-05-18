@@ -70,7 +70,7 @@ def build_server(default_root: str | Path | None = None) -> FastMCP:
     def pre_commit_check() -> str:
         return (
             "Before committing Python changes, call pyfallow.analyze_diff(since='HEAD~1'). "
-            "Auto-fix only findings classified as auto_safe, show review_needed findings to the user, "
+            "Auto-fix only findings classified as auto_safe, show decision_needed findings to the user, "
             "and block the commit when blocking findings remain."
         )
 
@@ -78,7 +78,7 @@ def build_server(default_root: str | Path | None = None) -> FastMCP:
     def pr_cleanup() -> str:
         return (
             "Before pushing a PR branch, call pyfallow.analyze_diff(since='main') and "
-            "pyfallow.agent_context(scope='diff'). Auto-fix safe findings, inspect review_needed "
+            "pyfallow.agent_context(scope='diff'). Auto-fix safe findings, inspect decision_needed "
             "findings for false positives, and summarize remaining risks for the user."
         )
 

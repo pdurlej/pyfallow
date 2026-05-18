@@ -30,9 +30,9 @@ When triggered:
 
 1. Prefer `fallow-py analyze --since HEAD --format agent-fix-plan` before commit, or call `pyfallow.analyze_diff(since="HEAD", min_confidence="medium")` through MCP.
 2. Before adding uncertain imports, call `pyfallow.verify_imports(file=<path>, planned_imports=[...])`.
-3. Use the returned `auto_safe`, `review_needed`, `blocking`, and `manual_only` groups.
+3. Use the returned `auto_safe`, `decision_needed`, and `blocking` groups.
 4. For each `auto_safe` finding, call `pyfallow.explain_finding(fingerprint=<fingerprint>)` and apply the minimal safe patch when one is available.
-5. For each `review_needed` finding, show the user the path, rule, confidence, and one-line remediation. Wait for direction.
+5. For each `decision_needed` finding, show the user the path, rule, confidence, one-line remediation, and trade-offs. Wait for direction.
 6. If any `blocking` finding remains, stop. Do not claim the task is complete. Do not commit or push.
 7. Re-run `pyfallow.analyze_diff` after edits and verify there are no new medium-or-higher confidence blockers.
 
