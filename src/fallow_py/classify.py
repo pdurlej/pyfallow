@@ -7,7 +7,7 @@ from typing import Any, TypeVar
 from .models import CONFIDENCE_ORDER, RULES
 
 FIX_PLAN_SCHEMA_VERSION = "1.0"
-CLASSIFICATION_GROUPS = ("auto_safe", "review_needed", "blocking", "manual_only")
+CLASSIFICATION_GROUPS = ("auto_safe", "decision_needed", "blocking")
 
 T = TypeVar("T")
 
@@ -19,7 +19,7 @@ BLOCKING_RULES = {
     "dev-dependency-used-in-runtime",
 }
 
-REVIEW_NEEDED_RULES = {
+DECISION_NEEDED_RULES = {
     "dynamic-import",
     "production-imports-test-code",
     "missing-type-dependency",
@@ -34,9 +34,8 @@ REVIEW_NEEDED_RULES = {
     "large-function",
     "large-file",
     "risky-hotspot",
+    "framework-entrypoint-detected",
 }
-
-MANUAL_ONLY_RULES = {"framework-entrypoint-detected"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +45,7 @@ class ClassificationResult:
     minimal_patch: dict[str, Any] | None
     investigation_hints: list[str]
     fix_options: list[dict[str, str]]
+    trade_offs: list[str]
 
 
 def group_by_classification(
@@ -72,6 +72,7 @@ def classify_finding(issue: dict[str, Any]) -> ClassificationResult:
         minimal_patch=_minimal_patch(issue, decision),
         investigation_hints=_render_templates(INVESTIGATION_HINTS.get(rule, DEFAULT_INVESTIGATION_HINTS), issue),
         fix_options=_render_fix_options(FIX_OPTIONS.get(rule, DEFAULT_FIX_OPTIONS), issue),
+        trade_offs=_render_templates(_trade_off_templates(issue, decision), issue),
     )
 
 
@@ -86,15 +87,13 @@ def agent_fix_plan(result: dict[str, Any]) -> dict[str, Any]:
         "source_report_schema_version": result["schema_version"],
         "summary": {
             "auto_safe_count": len(groups["auto_safe"]),
-            "review_needed_count": len(groups["review_needed"]),
+            "decision_needed_count": len(groups["decision_needed"]),
             "blocking_count": len(groups["blocking"]),
-            "manual_only_count": len(groups["manual_only"]),
             "total": len(plan_items),
         },
         "auto_safe": groups["auto_safe"],
-        "review_needed": groups["review_needed"],
+        "decision_needed": groups["decision_needed"],
         "blocking": groups["blocking"],
-        "manual_only": groups["manual_only"],
         "limitations": list(result.get("limitations", [])),
     }
     diff_scope = result.get("analysis", {}).get("diff_scope")
@@ -110,43 +109,41 @@ def _decision_and_rationale(issue: dict[str, Any]) -> tuple[str, str]:
         return "blocking", "deterministic structural signal; resolve before commit alongside tests, lint, and type checks."
     if rule == "circular-dependency":
         if issue.get("evidence", {}).get("type_checking_imports_contributed"):
-            return "review_needed", "cycle appears to involve type-checking imports; review before changing runtime structure."
+            return "decision_needed", "cycle appears to involve type-checking imports; decide whether runtime structure actually needs to change."
         return "blocking", "runtime import cycle risk; resolve before commit or explicitly waive."
     if rule == "boundary-violation":
         if issue["severity"] == "error":
             return "blocking", "configured architecture boundary is enforced as an error."
-        return "review_needed", "configured architecture boundary is advisory at this severity."
+        return "decision_needed", "configured architecture boundary is advisory at this severity."
     if rule == "stale-suppression":
         return "auto_safe", "stale suppression has high-confidence evidence and a local comment-only patch."
     if rule == "unused-symbol":
         return _unused_symbol_decision(issue)
     if rule == "unused-module":
         if CONFIDENCE_ORDER[confidence] < CONFIDENCE_ORDER["medium"]:
-            return "manual_only", "low-confidence dead-module signal; keep as context, not an action."
-        return "review_needed", "module reachability is static and should be reviewed before removal."
-    if rule in REVIEW_NEEDED_RULES:
-        return "review_needed", "use this deterministic signal as review input alongside the rest of the toolchain."
-    if rule in MANUAL_ONLY_RULES:
-        return "manual_only", "informational framework signal; no direct cleanup action."
-    return "review_needed", "unmapped rule defaults to review-needed to avoid unsafe automation."
+            return "decision_needed", "low-confidence dead-module signal; decide whether dynamic loading or framework discovery owns it."
+        return "decision_needed", "module reachability is static and needs a decision before removal."
+    if rule in DECISION_NEEDED_RULES:
+        return "decision_needed", "use this deterministic signal as decision input alongside the rest of the toolchain."
+    return "decision_needed", "unmapped rule defaults to decision-needed to avoid unsafe automation."
 
 
 def _unused_symbol_decision(issue: dict[str, Any]) -> tuple[str, str]:
     confidence = issue["confidence"]
     if CONFIDENCE_ORDER[confidence] < CONFIDENCE_ORDER["medium"]:
-        return "manual_only", "low-confidence unused-symbol signal; keep as context, not an action."
+        return "decision_needed", "low-confidence unused-symbol signal; decide whether dynamic usage, framework ownership, or a narrow suppression applies."
     state = issue.get("evidence", {}).get("state", {})
     if state.get("framework_managed") or issue.get("evidence", {}).get("framework_managed"):
-        return "review_needed", "symbol appears framework-managed; review before editing."
+        return "decision_needed", "symbol appears framework-managed; decide before editing."
     if state.get("entrypoint_managed") or issue.get("evidence", {}).get("entrypoint_managed"):
-        return "review_needed", "symbol is tied to an entrypoint; review before editing."
+        return "decision_needed", "symbol is tied to an entrypoint; decide before editing."
     if state.get("public_api") or issue.get("evidence", {}).get("public_api"):
-        return "review_needed", "symbol may be public API; review external callers before editing."
+        return "decision_needed", "symbol may be public API; decide based on external caller risk before editing."
     if state.get("dynamic_uncertain") or issue.get("evidence", {}).get("dynamic_uncertain"):
-        return "review_needed", "dynamic usage uncertainty prevents automatic cleanup."
+        return "decision_needed", "dynamic usage uncertainty prevents automatic cleanup."
     if confidence == "high":
         return "auto_safe", "high-confidence unused symbol without framework, entrypoint, public API, or dynamic uncertainty flags."
-    return "review_needed", "medium-confidence unused-symbol signal; review before cleanup."
+    return "decision_needed", "medium-confidence unused-symbol signal; decide before cleanup."
 
 
 def _plan_item(issue: dict[str, Any], classification: ClassificationResult) -> dict[str, Any]:
@@ -162,6 +159,7 @@ def _plan_item(issue: dict[str, Any], classification: ClassificationResult) -> d
         "confidence": issue["confidence"],
         "one_liner": _one_liner(issue),
         "rationale": classification.rationale,
+        "trade_offs": classification.trade_offs,
         "minimal_patch": classification.minimal_patch,
         "investigation_hints": classification.investigation_hints,
         "fix_options": classification.fix_options,
@@ -172,6 +170,15 @@ def _plan_item(issue: dict[str, Any], classification: ClassificationResult) -> d
     if distribution:
         item["distribution"] = distribution
     return item
+
+
+def _trade_off_templates(issue: dict[str, Any], decision: str) -> list[str]:
+    if decision == "auto_safe":
+        return []
+    rule = issue["rule"]
+    if decision == "blocking":
+        return TRADE_OFFS.get(rule, DEFAULT_BLOCKING_TRADE_OFFS)
+    return TRADE_OFFS.get(rule, DEFAULT_DECISION_TRADE_OFFS)
 
 
 def _minimal_patch(issue: dict[str, Any], decision: str) -> dict[str, Any] | None:
@@ -306,5 +313,70 @@ FIX_OPTIONS = {
         ("move_dependency", "Move the dependency behind an allowed module boundary."),
         ("extract_interface", "Extract a shared interface or policy module allowed by the rule."),
         ("adjust_rule", "Adjust the boundary rule only if the architecture policy changed."),
+    ],
+}
+
+DEFAULT_DECISION_TRADE_OFFS = [
+    "Fix now: reduces future agent and reviewer ambiguity if the finding matches project intent.",
+    "Keep and document: preserve the code when framework behavior, public API, or dynamic loading owns it.",
+    "Suppress narrowly: only for a known false positive with a stable rationale.",
+]
+
+DEFAULT_BLOCKING_TRADE_OFFS = [
+    "Fix before commit: removes a deterministic structural blocker from the change.",
+    "Waive explicitly: only acceptable with reviewer context, tests, and a recorded reason.",
+]
+
+TRADE_OFFS = {
+    "missing-runtime-dependency": [
+        "Declare '{distribution}': makes the runtime dependency explicit for installs and CI.",
+        "Remove or correct the import: best when the import was hallucinated, unused, or meant to target local code.",
+        "Guard as optional: only sensible when the feature can degrade cleanly without '{distribution}'.",
+    ],
+    "unresolved-import": [
+        "Fix the import path: keeps the static graph and runtime import behavior aligned.",
+        "Add the missing local module: appropriate only if the current change intentionally introduced that dependency.",
+        "Waive explicitly: risky because runtime import failure is likely unless another loader provides the module.",
+    ],
+    "dev-dependency-used-in-runtime": [
+        "Move the package to runtime dependencies: simplest when production code really imports it.",
+        "Move the import behind test-only code: best when production accidentally reached test/dev tooling.",
+        "Replace the dependency: useful when a lighter runtime-safe package exists.",
+    ],
+    "circular-dependency": [
+        "Break the cycle now: avoids import-order failures and makes agent edits easier to reason about.",
+        "Move type-only imports under TYPE_CHECKING: good when the edge is annotation-only.",
+        "Extract a shared module or interface: best when both modules need the same concept.",
+    ],
+    "boundary-violation": [
+        "Move the dependency behind an allowed interface: preserves the architecture rule.",
+        "Move code to the correct layer: best when the importer belongs elsewhere.",
+        "Change the boundary rule: only if the intended architecture changed, not just to silence this finding.",
+    ],
+    "unused-symbol": [
+        "Remove the symbol: lowest maintenance cost when it is not public, dynamic, or framework-owned.",
+        "Keep it as API or framework hook: safer when external callers, decorators, or naming conventions may use it.",
+        "Add a targeted suppression: appropriate for a documented false positive that should remain visible in history.",
+    ],
+    "unused-module": [
+        "Remove the module: only after checking dynamic imports, plugin registries, and framework discovery.",
+        "Declare an entrypoint or public API: appropriate when static imports miss legitimate reachability.",
+        "Add a targeted suppression: acceptable for intentional dynamic modules with a stable rationale.",
+    ],
+    "stale-suppression": [
+        "Remove the stale suppression: keeps future analyzer output honest.",
+        "Keep temporarily: only if a nearby change is about to reintroduce the suppressed finding.",
+    ],
+    "duplicate-code": [
+        "Extract shared code: useful when both blocks represent the same product concept.",
+        "Keep duplication: safer when similar code hides different product meaning or lifecycle.",
+    ],
+    "dynamic-import": [
+        "Make the import explicit: improves static analysis and agent understanding when the target is fixed.",
+        "Keep dynamic loading: appropriate for plugin systems, but document the allowed target shape.",
+    ],
+    "framework-entrypoint-detected": [
+        "Keep as framework-owned: no cleanup is implied; this is context for nearby dead-code decisions.",
+        "Add explicit configuration: useful when agents repeatedly misread framework discovery.",
     ],
 }

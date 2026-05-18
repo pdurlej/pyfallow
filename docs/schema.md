@@ -78,11 +78,10 @@ Low-confidence dead-code findings should not be auto-deleted.
 The fix-plan groups findings into:
 
 - `auto_safe`: deterministic low-risk cleanup candidates. In v0.3, concrete `minimal_patch` data is only emitted for stale suppressions.
-- `review_needed`: findings that are useful agent context but require product or architecture judgment.
+- `decision_needed`: findings that are useful agent context but require product, architecture, or dynamic-runtime judgment.
 - `blocking`: findings that should stop commit/ship flows unless resolved or explicitly waived.
-- `manual_only`: low-confidence or informational findings preserved as context.
 
-Each item keeps the original `fingerprint`, rule id, file/line, confidence, one-line summary, rationale, investigation hints, and deterministic fix options. This is designed for agents to consume directly without re-parsing general-purpose JSON.
+Each item keeps the original `fingerprint`, rule id, file/line, confidence, one-line summary, rationale, investigation hints, deterministic fix options, and trade-offs for non-auto decisions. This is designed for agents to consume directly without re-parsing general-purpose JSON.
 
 ## Graphs
 

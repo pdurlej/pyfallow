@@ -20,12 +20,30 @@ def safe_to_remove_impl(root: str | Path, fingerprints: list[str]) -> dict[str, 
 
 def safe_classification(fingerprint: str, issue: dict[str, Any] | None) -> Classification:
     if not issue:
-        return Classification(fingerprint=fingerprint, decision="manual_only", rationale="Fingerprint was not found.")
+        return Classification(
+            fingerprint=fingerprint,
+            decision="decision_needed",
+            rationale="Fingerprint was not found; it may be stale, mistyped, or from a different report.",
+            trade_offs=[
+                "Refresh analysis: safest when the fingerprint may come from an old report.",
+                "Do not delete: unknown fingerprints are never auto-safe removal evidence.",
+            ],
+        )
     if safe_auto_issue(issue):
-        return Classification(fingerprint=fingerprint, decision="auto_safe", rationale="High-confidence dead-code finding without unsafe state evidence.")
-    if issue.get("confidence") == "medium":
-        return Classification(fingerprint=fingerprint, decision="review_needed", rationale="Medium-confidence finding requires review.")
-    return Classification(fingerprint=fingerprint, decision="manual_only", rationale="Low confidence, dynamic uncertainty, public API, or non-dead-code rule.")
+        classification = classify_finding(issue)
+        return Classification(
+            fingerprint=fingerprint,
+            decision="auto_safe",
+            rationale="High-confidence dead-code finding without unsafe state evidence.",
+            trade_offs=classification.trade_offs,
+        )
+    classification = classify_finding(issue)
+    return Classification(
+        fingerprint=fingerprint,
+        decision=classification.decision,
+        rationale="Finding is not auto-safe for removal; use the classifier decision and trade-offs before editing.",
+        trade_offs=classification.trade_offs,
+    )
 
 
 def safe_auto_issue(issue: dict[str, Any]) -> bool:

@@ -153,9 +153,8 @@ python -m fallow_py analyze --root . --since HEAD --format agent-fix-plan
 The plan groups findings by action policy:
 
 - `auto_safe`: deterministic low-risk cleanup candidates; fallow-py currently emits a concrete minimal patch only for stale suppressions.
-- `review_needed`: useful structural signals that need human or agent reasoning with project context.
+- `decision_needed`: useful structural signals that need human, agent, or product-context judgment. Items in this bucket include `trade_offs` so the operator can see why automatic action is unsafe.
 - `blocking`: parse/config errors, missing runtime dependencies, enforced boundary violations, unresolved imports, and runtime import cycles.
-- `manual_only`: low-confidence or informational findings that should not drive automated edits.
 
 This format is meant to work alongside ruff, mypy/pyright, tests, and human review. It is not a replacement for those tools; it gives agents a deterministic slop-prevention checklist before they claim work is done.
 
