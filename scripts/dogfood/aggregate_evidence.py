@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.parse
 import urllib.request
@@ -28,6 +29,12 @@ REPORT_NAMES = {
 }
 CLASSIFICATION_GROUPS = ("auto_safe", "review_needed", "decision_needed", "blocking", "manual_only")
 UNCLASSIFIED_GROUP = "unclassified"
+RUN_THRESHOLD = 100
+LOG_ENTRY_THRESHOLD = 20
+MEANINGFUL_LOG_CATEGORIES = {"TP", "FP", "FN", "FRICTION", "SURPRISE", "WIN", "MODEL"}
+LOG_HEADING_RE = re.compile(r"^###\s+(?P<heading>.+?)\s*$", re.MULTILINE)
+LOG_CATEGORY_RE = re.compile(r"`\[(?P<backtick>[A-Z_]+)\]`|\[(?P<plain>[A-Z_]+)\]")
+LOG_FIELD_RE = re.compile(r"^\*\*(?P<name>[^*]+):\*\*\s*(?P<value>.*)$")
 
 
 @dataclass(slots=True)
@@ -54,26 +61,72 @@ class FindingRecord:
 
 
 @dataclass(slots=True)
+class DogfoodLogEntry:
+    source: str
+    heading: str
+    category: str
+    title: str
+    repo: str
+    rules: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class EvidenceSummary:
     generated_at: str
     source_repos: list[str] = field(default_factory=list)
     runs: list[RunRecord] = field(default_factory=list)
     findings: list[FindingRecord] = field(default_factory=list)
+    log_entries: list[DogfoodLogEntry] = field(default_factory=list)
     report_paths: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         run_statuses = Counter(run.status or "unknown" for run in self.runs)
+        run_events = Counter(run.event or "unknown" for run in self.runs)
+        runs_by_repo = Counter(run.repo for run in self.runs)
+        runs_by_repo_status: dict[str, Counter[str]] = defaultdict(Counter)
+        for run in self.runs:
+            runs_by_repo_status[run.repo][run.status or "unknown"] += 1
         categories = Counter(finding.group for finding in self.findings)
         severities = Counter(finding.severity for finding in self.findings)
         confidences = Counter(finding.confidence for finding in self.findings)
         rules = Counter(finding.rule for finding in self.findings)
         repos = Counter(finding.repo for finding in self.findings)
+        log_categories = Counter(entry.category for entry in self.log_entries)
+        log_repos = Counter(entry.repo for entry in self.log_entries if entry.repo)
+        log_rules: Counter[str] = Counter()
+        for entry in self.log_entries:
+            log_rules.update(entry.rules)
+        meaningful_log_entries = sum(
+            count for category, count in log_categories.items() if category in MEANINGFUL_LOG_CATEGORIES
+        )
         unclassified = categories.get(UNCLASSIFIED_GROUP, 0)
         operator_attention = (
             categories.get("blocking", 0)
             + categories.get("decision_needed", 0)
             + categories.get("review_needed", 0)
+        )
+        friction_count = len(self.warnings) + log_categories.get("FRICTION", 0)
+        friction_dominated = meaningful_log_entries > 0 and log_categories.get("FRICTION", 0) >= meaningful_log_entries
+        evidence_gate = {
+            "run_threshold": RUN_THRESHOLD,
+            "meaningful_log_entry_threshold": LOG_ENTRY_THRESHOLD,
+            "run_count": len(self.runs),
+            "meaningful_log_entry_count": meaningful_log_entries,
+            "friction_dominated": friction_dominated,
+            "ready": len(self.runs) >= RUN_THRESHOLD
+            and meaningful_log_entries >= LOG_ENTRY_THRESHOLD
+            and not friction_dominated,
+        }
+        top_fingerprints = top_fingerprint_records(self.findings)
+        owner_action_board = owner_action_board_for(
+            run_statuses=run_statuses,
+            categories=categories,
+            log_categories=log_categories,
+            evidence_gate=evidence_gate,
+            top_rules=rules,
+            top_fingerprints=top_fingerprints,
+            warning_count=len(self.warnings),
         )
         return {
             "schema": "fallow_py_dogfood_evidence.v1",
@@ -86,15 +139,29 @@ class EvidenceSummary:
             "unclassified_finding_count": unclassified,
             "operator_attention_count": operator_attention,
             "warning_count": len(self.warnings),
+            "friction_count": friction_count,
+            "log_entry_count": len(self.log_entries),
             "run_statuses": dict(sorted(run_statuses.items())),
+            "run_events": dict(sorted(run_events.items())),
+            "runs_by_repo": dict(sorted(runs_by_repo.items())),
+            "runs_by_repo_status": {
+                repo: dict(sorted(statuses.items())) for repo, statuses in sorted(runs_by_repo_status.items())
+            },
             "finding_categories": dict(sorted(categories.items())),
             "finding_severities": dict(sorted(severities.items())),
             "finding_confidences": dict(sorted(confidences.items())),
             "top_rules": dict(rules.most_common(15)),
+            "top_fingerprints": top_fingerprints,
             "findings_by_repo": dict(sorted(repos.items())),
+            "log_categories": dict(sorted(log_categories.items())),
+            "log_repos": dict(sorted(log_repos.items())),
+            "log_rules": dict(log_rules.most_common(15)),
+            "evidence_gate": evidence_gate,
+            "owner_action_board": owner_action_board,
             "reports": sorted(self.report_paths),
             "warnings": self.warnings,
             "runs": [asdict(run) for run in self.runs],
+            "log_entries": [asdict(entry) for entry in self.log_entries],
         }
 
 
@@ -192,6 +259,66 @@ def collect_reports(entries: list[str], *, default_repo: str) -> tuple[list[Find
     return findings, report_paths, warnings
 
 
+def collect_log_entries(entries: list[str]) -> tuple[list[DogfoodLogEntry], list[str]]:
+    log_entries: list[DogfoodLogEntry] = []
+    warnings: list[str] = []
+    for raw_path in entries:
+        path = Path(raw_path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            warnings.append(f"dogfood log skipped {path}: {exc}")
+            continue
+        parsed = parse_dogfood_log(text, source=str(path))
+        if not parsed:
+            warnings.append(f"dogfood log {path} had no parseable entries")
+        log_entries.extend(parsed)
+    return log_entries, warnings
+
+
+def parse_dogfood_log(text: str, *, source: str) -> list[DogfoodLogEntry]:
+    matches = list(LOG_HEADING_RE.finditer(text))
+    entries: list[DogfoodLogEntry] = []
+    for index, match in enumerate(matches):
+        heading = match.group("heading").strip()
+        category_match = LOG_CATEGORY_RE.search(heading)
+        if not category_match:
+            continue
+        category = (category_match.group("backtick") or category_match.group("plain") or "").strip()
+        if not category:
+            continue
+        next_start = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        body = text[match.end() : next_start]
+        fields = parse_log_fields(body)
+        title = heading[category_match.end() :].strip(" -\u2013\u2014")
+        entries.append(
+            DogfoodLogEntry(
+                source=source,
+                heading=heading,
+                category=category,
+                title=title or heading,
+                repo=fields.get("repo", ""),
+                rules=parse_rules(fields.get("fallow-py rule(s)", "")),
+            )
+        )
+    return entries
+
+
+def parse_log_fields(body: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for line in body.splitlines():
+        match = LOG_FIELD_RE.match(line.strip())
+        if match:
+            fields[match.group("name").strip().lower()] = match.group("value").strip()
+    return fields
+
+
+def parse_rules(value: str) -> list[str]:
+    if value.strip().lower() in {"", "n/a", "na", "none", "-"}:
+        return []
+    return [part.strip() for part in value.split(",") if part.strip() and part.strip().lower() != "n/a"]
+
+
 def parse_artifact_entries(entries: list[str], *, default_repo: str) -> list[tuple[str, Path]]:
     parsed: list[tuple[str, Path]] = []
     for entry in entries:
@@ -262,6 +389,85 @@ def finding_from_dict(item: dict[str, Any], *, repo: str, group: str) -> Finding
     )
 
 
+def top_fingerprint_records(findings: list[FindingRecord], *, limit: int = 15) -> list[dict[str, Any]]:
+    grouped: dict[str, list[FindingRecord]] = defaultdict(list)
+    for finding in findings:
+        if finding.fingerprint:
+            grouped[finding.fingerprint].append(finding)
+    records: list[dict[str, Any]] = []
+    for fingerprint, items in grouped.items():
+        records.append(
+            {
+                "fingerprint": fingerprint,
+                "count": len(items),
+                "rules": sorted({item.rule for item in items if item.rule}),
+                "repos": sorted({item.repo for item in items if item.repo}),
+                "files": sorted({item.file for item in items if item.file}),
+            }
+        )
+    records.sort(key=lambda item: (-int(item["count"]), str(item["fingerprint"])))
+    return records[:limit]
+
+
+def owner_action_board_for(
+    *,
+    run_statuses: Counter[str],
+    categories: Counter[str],
+    log_categories: Counter[str],
+    evidence_gate: dict[str, Any],
+    top_rules: Counter[str],
+    top_fingerprints: list[dict[str, Any]],
+    warning_count: int,
+) -> dict[str, list[str]]:
+    needs_owner_now: list[str] = []
+    failed_runs = run_statuses.get("failure", 0) + run_statuses.get("failed", 0)
+    if failed_runs:
+        needs_owner_now.append(f"REVIEW: {failed_runs} CI run(s) failed in the observed window.")
+    if warning_count:
+        needs_owner_now.append(f"REVIEW: {warning_count} aggregator warning(s) need a quick scan.")
+    if categories.get(UNCLASSIFIED_GROUP, 0):
+        needs_owner_now.append(
+            f"CHOOSE: {categories[UNCLASSIFIED_GROUP]} unclassified finding(s) need better report artifacts or manual triage."
+        )
+    if log_categories.get("FN", 0):
+        needs_owner_now.append(f"CREATE ISSUE: {log_categories['FN']} false-negative log entry/entries need follow-up.")
+    if not needs_owner_now:
+        needs_owner_now.append("none")
+
+    if evidence_gate["ready"]:
+        default_path = ["DEFAULT: evidence threshold met; prepare Phase B/C triage unless owner objects."]
+        blocked = ["none"]
+    else:
+        default_path = ["DEFAULT: continue dogfood collection and weekly aggregation."]
+        blocked = [
+            "BLOCKED: broad Phase B/C execution until "
+            f"{evidence_gate['run_count']}/{evidence_gate['run_threshold']} runs and "
+            f"{evidence_gate['meaningful_log_entry_count']}/{evidence_gate['meaningful_log_entry_threshold']} "
+            "meaningful log entries are collected without FRICTION dominating."
+        ]
+
+    agent_follow_up: list[str] = []
+    if top_rules:
+        rule, count = top_rules.most_common(1)[0]
+        agent_follow_up.append(f"TASK: inspect top recurring rule `{rule}` ({count} finding(s)).")
+    recurring = [item for item in top_fingerprints if int(item["count"]) > 1]
+    if recurring:
+        agent_follow_up.append(
+            f"TASK: inspect recurring fingerprint `{recurring[0]['fingerprint']}` ({recurring[0]['count']} occurrence(s))."
+        )
+    if log_categories.get("FRICTION", 0):
+        agent_follow_up.append(f"TASK: reduce logged friction ({log_categories['FRICTION']} entry/entries).")
+    if not agent_follow_up:
+        agent_follow_up.append("TASK: keep collecting CI/report artifacts; no recurring pattern yet.")
+
+    return {
+        "needs_owner_now": needs_owner_now,
+        "default_path_unless_owner_objects": default_path,
+        "agent_follow_up": agent_follow_up,
+        "blocked_waiting_on_precondition": blocked,
+    }
+
+
 def render_markdown(summary: EvidenceSummary) -> str:
     data = summary.to_json()
     lines = [
@@ -269,12 +475,17 @@ def render_markdown(summary: EvidenceSummary) -> str:
         "",
         f"Generated: `{data['generated_at']}`",
         "",
+    ]
+    lines.extend(owner_action_board_markdown(data["owner_action_board"]))
+    lines.extend(
+        [
         "## Totals",
         "",
         f"- Source repos: {len(data['source_repos'])}",
         f"- Forgejo runs observed: {data['run_count']}",
         f"- Report artifacts parsed: {data['report_count']}",
         f"- Findings observed: {data['finding_count']}",
+        f"- Dogfood log entries: {data['log_entry_count']}",
         "",
         "## Evidence Quality",
         "",
@@ -282,12 +493,21 @@ def render_markdown(summary: EvidenceSummary) -> str:
         f"- Unclassified findings: {data['unclassified_finding_count']}",
         f"- Operator-attention findings: {data['operator_attention_count']}",
         f"- Warnings: {data['warning_count']}",
+        f"- Friction signals: {data['friction_count']}",
         "",
-    ]
+        ]
+    )
+    lines.extend(evidence_gate_markdown(data["evidence_gate"]))
     lines.extend(counter_section("Run Statuses", data["run_statuses"]))
+    lines.extend(counter_section("Run Events", data["run_events"]))
+    lines.extend(counter_section("Runs By Repo", data["runs_by_repo"]))
     lines.extend(counter_section("Finding Categories", data["finding_categories"]))
     lines.extend(counter_section("Top Rules", data["top_rules"]))
+    lines.extend(fingerprint_section(data["top_fingerprints"]))
     lines.extend(counter_section("Findings By Repo", data["findings_by_repo"]))
+    lines.extend(counter_section("Log Categories", data["log_categories"]))
+    lines.extend(counter_section("Log Rules", data["log_rules"]))
+    lines.extend(counter_section("Log Repos", data["log_repos"]))
     if summary.warnings:
         lines.extend(["## Warnings", ""])
         lines.extend(f"- {warning}" for warning in summary.warnings)
@@ -303,6 +523,34 @@ def render_markdown(summary: EvidenceSummary) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def owner_action_board_markdown(board: dict[str, list[str]]) -> list[str]:
+    sections = [
+        ("Needs owner now", "needs_owner_now"),
+        ("Default path unless owner objects", "default_path_unless_owner_objects"),
+        ("Agent follow-up, no owner attention now", "agent_follow_up"),
+        ("Blocked / waiting on precondition", "blocked_waiting_on_precondition"),
+    ]
+    lines = ["## Owner Action Board", ""]
+    for title, key in sections:
+        lines.extend([f"### {title}", ""])
+        values = board.get(key) or ["none"]
+        lines.extend(f"- {value}" for value in values)
+        lines.append("")
+    return lines
+
+
+def evidence_gate_markdown(gate: dict[str, Any]) -> list[str]:
+    return [
+        "## Evidence Gate",
+        "",
+        f"- Runs: {gate['run_count']}/{gate['run_threshold']}",
+        f"- Meaningful log entries: {gate['meaningful_log_entry_count']}/{gate['meaningful_log_entry_threshold']}",
+        f"- FRICTION dominated: `{str(gate['friction_dominated']).lower()}`",
+        f"- Ready for broad Phase B/C triage: `{str(gate['ready']).lower()}`",
+        "",
+    ]
+
+
 def counter_section(title: str, values: dict[str, int]) -> list[str]:
     lines = [f"## {title}", ""]
     if not values:
@@ -310,6 +558,22 @@ def counter_section(title: str, values: dict[str, int]) -> list[str]:
         return lines
     for key, value in values.items():
         lines.append(f"- `{key}`: {value}")
+    lines.append("")
+    return lines
+
+
+def fingerprint_section(records: list[dict[str, Any]]) -> list[str]:
+    lines = ["## Top Recurring Fingerprints", ""]
+    if not records:
+        lines.extend(["- none", ""])
+        return lines
+    for record in records:
+        rules = ", ".join(f"`{rule}`" for rule in record["rules"]) or "unknown"
+        repos = ", ".join(f"`{repo}`" for repo in record["repos"]) or "unknown"
+        files = ", ".join(f"`{file}`" for file in record["files"][:3]) or "unknown"
+        lines.append(
+            f"- `{record['fingerprint']}`: {record['count']} occurrence(s); rules: {rules}; repos: {repos}; files: {files}"
+        )
     lines.append("")
     return lines
 
@@ -336,6 +600,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Directory or JSON report to parse. Use owner/repo=PATH to attribute reports to a repo.",
     )
+    parser.add_argument(
+        "--dogfood-log",
+        action="append",
+        default=[],
+        help="Local dogfood log Markdown file to include, e.g. .codex/DOGFOOD-LOG.md. May be repeated.",
+    )
     parser.add_argument("--default-repo", default="local/unknown", help="Repo name for artifact paths without owner/repo= prefix.")
     parser.add_argument("--output", type=Path, default=Path("dogfood-evidence-summary.md"))
     parser.add_argument("--json-output", type=Path, default=None)
@@ -356,11 +626,14 @@ def main(argv: list[str] | None = None) -> int:
             warnings.append(f"Forgejo run collection failed: {exc}")
     findings, report_paths, artifact_warnings = collect_reports(args.artifacts_dir, default_repo=args.default_repo)
     warnings.extend(artifact_warnings)
+    log_entries, log_warnings = collect_log_entries(args.dogfood_log)
+    warnings.extend(log_warnings)
     summary = EvidenceSummary(
         generated_at=generated_at,
         source_repos=[*args.repo, *[repo for repo, _ in parse_artifact_entries(args.artifacts_dir, default_repo=args.default_repo)]],
         runs=runs,
         findings=findings,
+        log_entries=log_entries,
         report_paths=report_paths,
         warnings=warnings,
     )

@@ -14,7 +14,9 @@ It prevents the current plan from living only in chat context.
 - Dogfood aggregation infrastructure is tracked in [Forgejo #29](https://git.pdurlej.com/pdurlej/fallow-py/issues/29).
   The current lightweight aggregator is [`scripts/dogfood/aggregate_evidence.py`](../scripts/dogfood/aggregate_evidence.py):
   it reads Forgejo Actions run metadata plus locally available `pyfallow-report.json`
-  artifacts and emits Markdown/JSON summaries for operator review.
+  artifacts plus local dogfood logs and emits Markdown/JSON summaries for operator
+  review. The Markdown summary starts with an Owner Action Board so the operator
+  can scan what needs attention now.
 
 ## Evidence Gate
 
@@ -34,11 +36,12 @@ calendar date passes. The current gate is:
    python scripts/dogfood/aggregate_evidence.py \
      --repo pdurlej/fallow-py \
      --artifacts-dir pdurlej/fallow-py=/var/lib/fallow-py/dogfood/fallow-py \
+     --dogfood-log /Users/pd/Developer/fallow-python/.codex/DOGFOOD-LOG.md \
      --output /var/lib/fallow-py/dogfood/weekly.md \
      --json-output /var/lib/fallow-py/dogfood/weekly.json
    ```
 
-3. Log false positives, useful findings, missed findings, and workflow friction with [`docs/dogfood-log-template.md`](dogfood-log-template.md).
+3. Log false positives, useful findings, missed findings, and workflow friction with [`docs/dogfood-log-template.md`](dogfood-log-template.md). The logs may stay gitignored; pass them to the aggregator with `--dogfood-log`.
 4. Keep accepted DeepSeek follow-ups visible through Forgejo issues instead of re-litigating the raw audit.
 5. Treat `fallow-ts` as a sibling project, not a reason to expand this Python analyzer before evidence arrives.
 

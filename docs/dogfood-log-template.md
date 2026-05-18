@@ -13,6 +13,7 @@
 - Each entry is short (3-5 lines). Don't perfect — capture-then-classify
 - Don't worry about format consistency. Patterns emerge from raw observations, not from forcing a schema upfront
 - One entry per event. If fallow-py flags 5 things on one PR, that's potentially 5 entries (only the surprising ones, not the routine green CI runs)
+- Keep the `### ... — \`[CATEGORY]\` Title`, `**Repo:**`, and `**fallow-py rule(s):**` lines when possible. The evidence aggregator reads those fields from gitignored logs via `--dogfood-log`.
 
 **Categories** (use them when they fit, ignore when they don't):
 
