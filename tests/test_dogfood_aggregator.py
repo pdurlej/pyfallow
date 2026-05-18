@@ -223,3 +223,167 @@ def test_cli_writes_markdown_and_json_outputs(tmp_path: Path) -> None:
     assert payload["unclassified_finding_count"] == 0
     assert payload["operator_attention_count"] == 1
     assert payload["reports"] == [str(report_dir / "pyfallow-report.json")]
+
+
+def test_collects_local_dogfood_log_entries(tmp_path: Path) -> None:
+    aggregator = load_aggregator()
+    log_path = tmp_path / "DOGFOOD-LOG.md"
+    log_path.write_text(
+        """# Local dogfood log
+
+## Entries (newest first)
+
+### 2026-05-18 10:15 — `[TP]` Caught missing runtime dependency
+
+**Repo:** owner/repo
+**PR / commit:** abc123
+**fallow-py rule(s):** PY040, missing-runtime-dependency
+**What happened:** fallow-py caught a dependency issue before merge.
+
+**Surprising part:** agent missed it during review.
+
+**Implication for next sprint:** keep dependency checks prominent.
+
+### 2026-05-18 10:20 — `[FRICTION]` Report was hard to scan
+
+**Repo:** owner/other
+**fallow-py rule(s):** N/A
+**What happened:** operator had to inspect raw JSON.
+""",
+        encoding="utf-8",
+    )
+
+    entries, warnings = aggregator.collect_log_entries([str(log_path)])
+
+    assert warnings == []
+    assert [(entry.category, entry.repo, entry.title) for entry in entries] == [
+        ("TP", "owner/repo", "Caught missing runtime dependency"),
+        ("FRICTION", "owner/other", "Report was hard to scan"),
+    ]
+    assert entries[0].rules == ["PY040", "missing-runtime-dependency"]
+
+
+def test_summary_exposes_cockpit_counts_and_owner_action_board(tmp_path: Path) -> None:
+    aggregator = load_aggregator()
+    summary = aggregator.EvidenceSummary(
+        generated_at="2026-05-18T00:00:00+00:00",
+        source_repos=["owner/repo"],
+        runs=[
+            aggregator.RunRecord(
+                repo="owner/repo",
+                run_id=1,
+                status="success",
+                workflow="ci.yml",
+                event="push",
+                started="2026-05-18T00:00:00+00:00",
+                stopped="2026-05-18T00:01:00+00:00",
+                html_url="https://git.example/runs/1",
+            ),
+            aggregator.RunRecord(
+                repo="owner/repo",
+                run_id=2,
+                status="failure",
+                workflow="ci.yml",
+                event="pull_request",
+                started="2026-05-18T00:02:00+00:00",
+                stopped="2026-05-18T00:03:00+00:00",
+                html_url="https://git.example/runs/2",
+            ),
+        ],
+        findings=[
+            aggregator.FindingRecord(
+                repo="owner/repo",
+                group="blocking",
+                rule="missing-runtime-dependency",
+                severity="error",
+                confidence="high",
+                fingerprint="same",
+                file="src/app.py",
+            ),
+            aggregator.FindingRecord(
+                repo="owner/repo",
+                group="blocking",
+                rule="missing-runtime-dependency",
+                severity="error",
+                confidence="high",
+                fingerprint="same",
+                file="src/app.py",
+            ),
+            aggregator.FindingRecord(
+                repo="owner/repo",
+                group="unclassified",
+                rule="dynamic-import",
+                severity="info",
+                confidence="low",
+                fingerprint="dyn",
+                file="src/plugin.py",
+            ),
+        ],
+        log_entries=[
+            aggregator.DogfoodLogEntry(
+                source=str(tmp_path / "DOGFOOD-LOG.md"),
+                heading="2026-05-18 10:20 — `[FRICTION]` Report was hard to scan",
+                category="FRICTION",
+                title="Report was hard to scan",
+                repo="owner/repo",
+                rules=[],
+            )
+        ],
+        warnings=["owner/repo: example warning"],
+    )
+
+    data = summary.to_json()
+
+    assert data["runs_by_repo"] == {"owner/repo": 2}
+    assert data["run_events"] == {"pull_request": 1, "push": 1}
+    assert data["runs_by_repo_status"] == {"owner/repo": {"failure": 1, "success": 1}}
+    assert data["top_fingerprints"][0] == {
+        "fingerprint": "same",
+        "count": 2,
+        "rules": ["missing-runtime-dependency"],
+        "repos": ["owner/repo"],
+        "files": ["src/app.py"],
+    }
+    assert data["log_entry_count"] == 1
+    assert data["log_categories"] == {"FRICTION": 1}
+    assert data["friction_count"] == 2
+    assert data["evidence_gate"]["ready"] is False
+    assert data["owner_action_board"]["needs_owner_now"]
+
+    markdown = aggregator.render_markdown(summary)
+    assert "## Owner Action Board" in markdown
+    assert "### Needs owner now" in markdown
+    assert "`same`" in markdown
+
+
+def test_cli_accepts_dogfood_log_input(tmp_path: Path) -> None:
+    aggregator = load_aggregator()
+    log_path = tmp_path / "DOGFOOD-LOG.md"
+    output = tmp_path / "summary.md"
+    json_output = tmp_path / "summary.json"
+    log_path.write_text(
+        """### 2026-05-18 12:00 — `[WIN]` Agent caught issue earlier
+
+**Repo:** owner/repo
+**fallow-py rule(s):** PY020
+**What happened:** fallow-py forced a cycle fix before review.
+""",
+        encoding="utf-8",
+    )
+
+    exit_code = aggregator.main(
+        [
+            "--dogfood-log",
+            str(log_path),
+            "--output",
+            str(output),
+            "--json-output",
+            str(json_output),
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(json_output.read_text(encoding="utf-8"))
+    assert payload["log_entry_count"] == 1
+    assert payload["log_categories"] == {"WIN": 1}
+    assert "Owner Action Board" in output.read_text(encoding="utf-8")

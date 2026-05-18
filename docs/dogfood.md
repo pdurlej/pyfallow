@@ -209,10 +209,11 @@ This is anti-AI-slop posture: don't polish from imagination, polish from logs.
 
 Use [`scripts/dogfood/aggregate_evidence.py`](../scripts/dogfood/aggregate_evidence.py)
 from a trusted host to turn many CI runs and report artifacts into one operator-readable
-summary. The script is stdlib-only and has two inputs:
+summary. The script is stdlib-only and has three inputs:
 
 - Forgejo Actions run metadata, read through `/api/v1/repos/{owner}/{repo}/actions/runs`
 - locally available fallow-py report artifacts, usually files named `pyfallow-report.json`
+- local dogfood logs such as `.codex/DOGFOOD-LOG.md`, passed with `--dogfood-log`
 
 Example cron-friendly command:
 
@@ -222,6 +223,7 @@ python scripts/dogfood/aggregate_evidence.py \
   --repo pdurlej/fallow-py \
   --runs-limit 100 \
   --artifacts-dir pdurlej/fallow-py=/var/lib/fallow-py/dogfood/fallow-py \
+  --dogfood-log /Users/pd/Developer/fallow-python/.codex/DOGFOOD-LOG.md \
   --output /var/lib/fallow-py/dogfood/weekly.md \
   --json-output /var/lib/fallow-py/dogfood/weekly.json
 ```
@@ -233,6 +235,13 @@ unless it is reading private Forgejo run metadata.
 Prefer `--format agent-fix-plan` reports for dogfood artifacts. Plain JSON reports
 do not carry action-policy buckets, so the aggregator counts those findings as
 `unclassified` unless each issue already includes an explicit classification field.
+
+The Markdown summary starts with an Owner Action Board:
+
+- **Needs owner now**: failed runs, unclassified findings, false negatives, or aggregator warnings
+- **Default path unless owner objects**: whether to keep collecting or run Phase B/C triage
+- **Agent follow-up**: recurring rules, fingerprints, or friction that agents can investigate
+- **Blocked / waiting on precondition**: current progress toward the evidence gate
 
 ## When fallow-py is wrong
 
