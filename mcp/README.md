@@ -61,8 +61,12 @@ finding:
   "classifications": {
     "<fingerprint>": {
       "fingerprint": "<fingerprint>",
-      "decision": "manual_only",
+      "decision": "decision_needed",
       "rationale": "Fingerprint was not found in the current analysis; treat it as stale or unknown evidence and do not remove code from it.",
+      "trade_offs": [
+        "Refresh analysis: safest when the fingerprint may come from an old report.",
+        "Do not delete: unknown fingerprints are never auto-safe removal evidence."
+      ],
       "recognized": false
     }
   },

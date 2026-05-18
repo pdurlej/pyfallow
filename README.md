@@ -142,6 +142,15 @@ Recommended workflow:
 5. Do not auto-delete low-confidence or framework-adjacent dead code.
 6. Rerun fallow-py after edits and compare new/resolved findings.
 
+When a finding is unclear, ask fallow-py for the rule contract:
+
+```bash
+python -m fallow_py explain PY031
+python -m fallow_py explain unused-symbol --format markdown
+```
+
+The same rule reference is available in [`docs/rules.md`](docs/rules.md).
+
 ## Agent Fix-Plan Format
 
 Use `agent-fix-plan` when an AI agent needs a native cleanup plan rather than the full report:

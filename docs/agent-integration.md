@@ -60,10 +60,11 @@ fallow-py analyze --root . --since HEAD --format json --min-confidence medium
 2. Before adding uncertain imports, call `fallow_py.verify_imports(file=<path>, planned_imports=[...])`.
 3. Read `analyze_diff.blocking`, `analyze_diff.decision_needed`, and `analyze_diff.auto_safe`.
 4. Call `pyfallow.explain_finding` when you need remediation details.
-5. Auto-fix only findings classified as `auto_safe`.
-6. Show `decision_needed` findings and their trade-offs to the user.
-7. Stop on `blocking` findings. Do not commit or claim completion.
-8. Re-run diff analysis after edits.
+5. Call `fallow-py explain <RULE>` when the rule itself is unclear.
+6. Auto-fix only findings classified as `auto_safe`.
+7. Show `decision_needed` findings and their trade-offs to the user.
+8. Stop on `blocking` findings. Do not commit or claim completion.
+9. Re-run diff analysis after edits.
 
 Blocking findings include parse/config errors, missing runtime dependencies, circular dependencies, and architecture boundary violations.
 
