@@ -88,7 +88,7 @@ class VerifyResult:
     file: str
     planned_imports: list[str]
     safe: list[ImportPrediction] = field(default_factory=list)
-    review_needed: list[ImportPrediction] = field(default_factory=list)
+    decision_needed: list[ImportPrediction] = field(default_factory=list)
     hallucinated: list[HallucinatedImport] = field(default_factory=list)
     cycles_introduced: list[CyclePrediction] = field(default_factory=list)
     boundary_violations: list[BoundaryViolation] = field(default_factory=list)
@@ -121,7 +121,7 @@ def verify_imports(
     adjacency = _adjacency(report)
 
     safe: list[ImportPrediction] = []
-    review_needed: list[ImportPrediction] = []
+    decision_needed: list[ImportPrediction] = []
     hallucinated: list[HallucinatedImport] = []
     cycles: list[CyclePrediction] = []
     boundaries: list[BoundaryViolation] = []
@@ -140,7 +140,7 @@ def verify_imports(
             )
             continue
         if absolute_name.endswith(".*"):
-            review_needed.append(
+            decision_needed.append(
                 ImportPrediction(
                     raw=raw,
                     import_name=spec.name,
@@ -239,7 +239,7 @@ def verify_imports(
 
     status = (
         "issues_found"
-        if hallucinated or cycles or boundaries or missing or review_needed
+        if hallucinated or cycles or boundaries or missing or decision_needed
         else "ok"
     )
     return VerifyResult(
@@ -247,7 +247,7 @@ def verify_imports(
         file=_target_path(config, target_file),
         planned_imports=list(planned_imports),
         safe=safe,
-        review_needed=review_needed,
+        decision_needed=decision_needed,
         hallucinated=hallucinated,
         cycles_introduced=cycles,
         boundary_violations=boundaries,

@@ -5,7 +5,7 @@
     "circular-dependency",
     "missing-runtime-dependency"
   ],
-  "review_needed_rules": [
+  "decision_needed_rules": [
     "duplicate-code",
     "dynamic-import",
     "high-cognitive-complexity",
@@ -18,8 +18,7 @@
   "summary": {
     "auto_safe_count": 0,
     "blocking_count": 3,
-    "manual_only_count": 1,
-    "review_needed_count": 13,
+    "decision_needed_count": 14,
     "total": 17
   }
 }

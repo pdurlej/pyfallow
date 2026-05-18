@@ -9,9 +9,9 @@ alwaysApply: true
 When you finish editing Python code, before responding "done" or running `git commit`:
 
 1. Use the fallow-py MCP server if available and call `analyze_diff(since="HEAD")` before commit, or `since="main"` for PR cleanup.
-2. Group findings as `auto_safe`, `review_needed`, and `blocking`.
+2. Group findings as `auto_safe`, `decision_needed`, and `blocking`.
 3. Auto-fix only `auto_safe` findings.
-4. Surface `review_needed` findings to the user with confidence and a one-line remediation.
+4. Surface `decision_needed` findings to the user with confidence, remediation, and trade-offs.
 5. Block if `blocking` is not empty. Do not commit, push, or claim completion.
 
 If fallow-py MCP is not available, run:

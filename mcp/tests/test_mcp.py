@@ -241,17 +241,19 @@ def test_analyze_diff_returns_grouped_classifications(tmp_path: Path) -> None:
         )
     )
 
-    for group in ["auto_safe", "review_needed", "blocking", "manual_only"]:
+    for group in ["auto_safe", "decision_needed", "blocking"]:
         assert isinstance(result[group], list)
     assert {item["rule"] for item in result["blocking"]} == {"boundary-violation", "circular-dependency"}
-    assert any(item["rule"] == "unused-module" for item in result["review_needed"])
+    assert any(item["rule"] == "unused-module" for item in result["decision_needed"])
     grouped = [
         item
-        for group in ["auto_safe", "review_needed", "blocking", "manual_only"]
+        for group in ["auto_safe", "decision_needed", "blocking"]
         for item in result[group]
     ]
     assert len(grouped) == len(result["findings"])
     assert [item["fingerprint"] for item in grouped] == [item["fingerprint"] for item in result["findings"]]
+    for item in [*result["decision_needed"], *result["blocking"]]:
+        assert item["trade_offs"]
 
 
 def test_analyze_diff_grouped_truncation_keeps_flat_compatibility(tmp_path: Path) -> None:
@@ -264,11 +266,11 @@ def test_analyze_diff_grouped_truncation_keeps_flat_compatibility(tmp_path: Path
         )
     )
 
-    grouped_count = sum(len(result[group]) for group in ["auto_safe", "review_needed", "blocking", "manual_only"])
+    grouped_count = sum(len(result[group]) for group in ["auto_safe", "decision_needed", "blocking"])
     assert result["truncated"] is True
     assert grouped_count == 1
     assert len(result["findings"]) == 1
-    assert [item["fingerprint"] for group in ["auto_safe", "review_needed", "blocking", "manual_only"] for item in result[group]] == [
+    assert [item["fingerprint"] for group in ["auto_safe", "decision_needed", "blocking"] for item in result[group]] == [
         item["fingerprint"] for item in result["findings"]
     ]
 
@@ -298,7 +300,7 @@ def test_explain_finding_produces_remediation(tmp_path: Path) -> None:
     result = asyncio.run(call_tool("explain_finding", {"root": str(root), "fingerprint": fingerprint}))
 
     assert result["finding"]["fingerprint"] == fingerprint
-    assert result["classification"] in {"auto_safe", "review_needed", "blocking"}
+    assert result["classification"] in {"auto_safe", "decision_needed", "blocking"}
     assert result["one_liner"]
     assert result["fix_options"]
     assert result["safety_notes"]
@@ -414,8 +416,40 @@ def test_safe_to_remove_classifies_unknown_fingerprints_deterministically(tmp_pa
 
     result = asyncio.run(call_tool("safe_to_remove", {"root": str(tmp_path), "fingerprints": fingerprints}))
 
-    assert sorted(result) == fingerprints
-    assert {item["decision"] for item in result.values()} == {"manual_only"}
+    assert result["unrecognized"] == fingerprints
+    assert sorted(result["classifications"]) == fingerprints
+    assert {item["decision"] for item in result["classifications"].values()} == {"decision_needed"}
+    assert {item["recognized"] for item in result["classifications"].values()} == {False}
+    assert all(item["decision"] != "auto_safe" for item in result["classifications"].values())
+    assert all("not found" in item["rationale"] for item in result["classifications"].values())
+    assert all(item["trade_offs"] for item in result["classifications"].values())
+
+
+def test_safe_to_remove_separates_unrecognized_from_recognized(tmp_path: Path) -> None:
+    write(
+        tmp_path / "pyproject.toml",
+        """
+        [tool.fallow_py]
+        roots = ["src"]
+        entry = ["src/app.py"]
+        """,
+    )
+    write(tmp_path / "src/app.py", "def main():\n    return 1\n")
+    write(tmp_path / "src/unused.py", "def orphan():\n    return 1\n")
+    REPORT_CACHE.clear()
+    report = cached_report(tmp_path)
+    recognized = next(issue["fingerprint"] for issue in report["issues"] if issue["rule"] == "unused-module")
+
+    result = asyncio.run(
+        call_tool("safe_to_remove", {"root": str(tmp_path), "fingerprints": [recognized, "missing-fp"]})
+    )
+
+    assert result["unrecognized"] == ["missing-fp"]
+    assert set(result["classifications"]) == {recognized, "missing-fp"}
+    assert result["classifications"][recognized]["recognized"] is True
+    assert result["classifications"]["missing-fp"]["recognized"] is False
+    assert result["classifications"]["missing-fp"]["decision"] == "decision_needed"
+    assert result["classifications"]["missing-fp"]["trade_offs"]
 
 
 def test_resources_return_report_and_module_graph(tmp_path: Path) -> None:
