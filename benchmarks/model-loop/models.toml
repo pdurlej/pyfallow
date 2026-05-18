@@ -1,0 +1,40 @@
+[[models]]
+name = "gpt-55-mid"
+provider = "opencode"
+provider_model = "gpt-5.5"
+effort = "medium"
+cost_tier = "premium-mid-effort"
+notes = "Logical alias for lower-effort GPT-5.5 style runs. Fill exact provider model at execution time."
+
+[[models]]
+name = "gpt-55-thinking"
+provider = "opencode"
+provider_model = "gpt-5.5-thinking"
+effort = "high"
+cost_tier = "premium-high-effort"
+notes = "Logical alias for higher-effort GPT-5.5 style runs. Fill exact provider model at execution time."
+
+[[models]]
+name = "sonnet-46-mid"
+provider = "opencode"
+provider_model = "claude-sonnet-4.6"
+effort = "medium"
+cost_tier = "premium-mid-effort"
+notes = "Logical alias for Sonnet 4.6 medium-effort comparison runs."
+
+[[models]]
+name = "sonnet-46-thinking"
+provider = "opencode"
+provider_model = "claude-sonnet-4.6-thinking"
+effort = "high"
+cost_tier = "premium-high-effort"
+notes = "Logical alias for Sonnet 4.6 higher-effort comparison runs."
+
+[[models]]
+name = "ollama-cloud-coder"
+provider = "ollama"
+provider_model = "configured-at-runtime"
+effort = "default"
+cost_tier = "subscription-or-local"
+notes = "Use for Ollama Cloud/local candidate-generator experiments. Record exact model in the run record."
+
