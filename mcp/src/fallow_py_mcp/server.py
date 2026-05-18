@@ -8,7 +8,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from . import VERSION
-from .schemas import AgentContext, AnalysisResult, Classification, Remediation, VerifyResult
+from .schemas import AgentContext, AnalysisResult, Remediation, SafeToRemoveResult, VerifyResult
 from .runtime import cached_report, module_graph
 from .tools import (
     agent_context_impl,
@@ -55,7 +55,7 @@ def build_server(default_root: str | Path | None = None) -> FastMCP:
         return verify_imports_impl(root_or_default(root), file, planned_imports or [])
 
     @server.tool
-    def safe_to_remove(root: str | None = None, fingerprints: list[str] | None = None) -> dict[str, Classification]:
+    def safe_to_remove(root: str | None = None, fingerprints: list[str] | None = None) -> SafeToRemoveResult:
         return safe_to_remove_impl(root_or_default(root), fingerprints or [])
 
     @server.resource("pyfallow://report/current/{root}")
@@ -70,7 +70,7 @@ def build_server(default_root: str | Path | None = None) -> FastMCP:
     def pre_commit_check() -> str:
         return (
             "Before committing Python changes, call pyfallow.analyze_diff(since='HEAD~1'). "
-            "Auto-fix only findings classified as auto_safe, show review_needed findings to the user, "
+            "Auto-fix only findings classified as auto_safe, show decision_needed findings to the user, "
             "and block the commit when blocking findings remain."
         )
 
@@ -78,7 +78,7 @@ def build_server(default_root: str | Path | None = None) -> FastMCP:
     def pr_cleanup() -> str:
         return (
             "Before pushing a PR branch, call pyfallow.analyze_diff(since='main') and "
-            "pyfallow.agent_context(scope='diff'). Auto-fix safe findings, inspect review_needed "
+            "pyfallow.agent_context(scope='diff'). Auto-fix safe findings, inspect decision_needed "
             "findings for false positives, and summarize remaining risks for the user."
         )
 

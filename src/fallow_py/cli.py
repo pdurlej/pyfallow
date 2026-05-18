@@ -13,6 +13,7 @@ from .config import load_config
 from .doctor import doctor_payload, format_doctor_text
 from .formatters import format_agent_context, format_result
 from .models import CONFIDENCE_ORDER, SEVERITY_ORDER, VERSION
+from .rule_explain import explain_all_rules, explain_rule, render_explanation
 from .summary import summary_from_issue_dicts
 
 TEXT_LIMITATION_FORMATS = {"text", "markdown"}
@@ -33,8 +34,10 @@ def main(argv: list[str] | None = None, *, prog: str = "fallow-py") -> int:
         argv = ["analyze", *argv]
     parser = build_parser(prog=prog)
     args = parser.parse_args(argv)
-    _configure_logging(args.debug, prog)
+    _configure_logging(getattr(args, "debug", False), prog)
     try:
+        if args.command == "explain":
+            return _run_explain(args)
         if args.command == "baseline":
             return _run_baseline(args)
         if args.command == "doctor":
@@ -62,6 +65,13 @@ def build_parser(prog: str = "fallow-py") -> argparse.ArgumentParser:
     _add_common(compare)
     doctor = sub.add_parser("doctor")
     _add_doctor(doctor)
+    explain = sub.add_parser("explain", help="Explain a fallow-py rule id or slug.")
+    explain.add_argument("rule", nargs="?", help="Rule slug such as unused-symbol, or id such as PY031.")
+    explain.add_argument("--all", action="store_true", help="Show all rule explanations.")
+    explain.add_argument("--format", choices=["text", "json", "markdown"], default="text")
+    explain.add_argument("--output")
+    explain.add_argument("--quiet", action="store_true")
+    explain.add_argument("--debug", action="store_true")
     return parser
 
 
@@ -167,6 +177,17 @@ def _run_doctor(args: argparse.Namespace) -> int:
         else format_doctor_text(payload)
     )
     _write_or_print(output, args.output)
+    return 0
+
+
+def _run_explain(args: argparse.Namespace) -> int:
+    if args.all:
+        value = explain_all_rules()
+    elif args.rule:
+        value = explain_rule(args.rule)
+    else:
+        raise ValueError("explain requires a rule id/slug or --all")
+    _write_or_print(render_explanation(value, args.format), args.output)
     return 0
 
 

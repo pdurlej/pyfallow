@@ -34,6 +34,10 @@ def test_classification_decision_mirrors_core_groups() -> None:
     )
 
 
+def test_core_contract_uses_three_product_buckets() -> None:
+    assert CLASSIFICATION_GROUPS == ("auto_safe", "decision_needed", "blocking")
+
+
 def test_finding_classification_mirrors_core_groups() -> None:
     args = _literal_args(Finding.model_fields["classification"].annotation)
     assert args == CORE_GROUPS
@@ -42,6 +46,11 @@ def test_finding_classification_mirrors_core_groups() -> None:
 def test_remediation_classification_mirrors_core_groups() -> None:
     args = _literal_args(Remediation.model_fields["classification"].annotation)
     assert args == CORE_GROUPS
+
+
+def test_contract_models_expose_trade_offs_for_non_auto_decisions() -> None:
+    assert "trade_offs" in Finding.model_fields
+    assert "trade_offs" in Remediation.model_fields
 
 
 def test_safe_classification_canary_returns_auto_safe_for_clean_high_confidence() -> None:
