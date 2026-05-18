@@ -40,6 +40,7 @@ class Finding(FlexibleModel):
     message: str
     evidence: dict[str, Any] = Field(default_factory=dict)
     actions: list[dict[str, Any]] = Field(default_factory=list)
+    trade_offs: list[str]
     fingerprint: str
 
 
@@ -47,9 +48,8 @@ class AnalysisResult(BaseModel):
     summary: SummaryCounts
     diff_scope: DiffScope
     auto_safe: list[Finding] = Field(default_factory=list)
-    review_needed: list[Finding] = Field(default_factory=list)
+    decision_needed: list[Finding] = Field(default_factory=list)
     blocking: list[Finding] = Field(default_factory=list)
-    manual_only: list[Finding] = Field(default_factory=list)
     findings: list[Finding]
     truncated: bool = False
     next_cursor: str | None = None
@@ -113,6 +113,7 @@ class Remediation(BaseModel):
     finding: Finding
     classification: ClassificationDecision
     one_liner: str
+    trade_offs: list[str]
     investigation_hints: list[str]
     fix_options: list[FixOption]
     safety_notes: list[str]
@@ -162,7 +163,7 @@ class VerifyResult(BaseModel):
     file: str
     planned_imports: list[str]
     safe: list[ImportPrediction] = Field(default_factory=list)
-    review_needed: list[ImportPrediction] = Field(default_factory=list)
+    decision_needed: list[ImportPrediction] = Field(default_factory=list)
     hallucinated: list[HallucinatedImport] = Field(default_factory=list)
     cycles_introduced: list[CyclePrediction] = Field(default_factory=list)
     boundary_violations: list[BoundaryViolation] = Field(default_factory=list)
@@ -173,3 +174,4 @@ class Classification(BaseModel):
     fingerprint: str
     decision: ClassificationDecision
     rationale: str
+    trade_offs: list[str]

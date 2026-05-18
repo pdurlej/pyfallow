@@ -43,13 +43,12 @@ Tools:
 ```json
 {
   "blocking": [],
-  "review_needed": [],
+  "decision_needed": [],
   "auto_safe": [],
-  "manual_only": [],
   "findings": []
 }
 ```
 
-Agents should prefer the grouped fields (`blocking`, `review_needed`, `auto_safe`, `manual_only`).
+Agents should prefer the grouped fields (`blocking`, `decision_needed`, `auto_safe`).
 The flat `findings` list is kept for backward compatibility and contains the same findings in grouped
 order.

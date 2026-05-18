@@ -58,10 +58,10 @@ fallow-py analyze --root . --since HEAD --format json --min-confidence medium
 
 1. Call `pyfallow.analyze_diff(since="HEAD", min_confidence="medium")` before commit, or use the branch base ref for PR cleanup.
 2. Before adding uncertain imports, call `fallow_py.verify_imports(file=<path>, planned_imports=[...])`.
-3. Read `analyze_diff.blocking`, `analyze_diff.review_needed`, `analyze_diff.auto_safe`, and `analyze_diff.manual_only`.
+3. Read `analyze_diff.blocking`, `analyze_diff.decision_needed`, and `analyze_diff.auto_safe`.
 4. Call `pyfallow.explain_finding` when you need remediation details.
 5. Auto-fix only findings classified as `auto_safe`.
-6. Show `review_needed` findings to the user.
+6. Show `decision_needed` findings and their trade-offs to the user.
 7. Stop on `blocking` findings. Do not commit or claim completion.
 8. Re-run diff analysis after edits.
 
@@ -78,9 +78,8 @@ Blocking findings include parse/config errors, missing runtime dependencies, cir
 `analyze_diff` returns grouped findings using the same action policy as CLI `--format agent-fix-plan`:
 
 - `blocking`: findings that should stop commit/ship flows unless resolved or explicitly waived
-- `review_needed`: deterministic signals that need project judgment
+- `decision_needed`: deterministic signals that need project judgment, with explicit trade-offs
 - `auto_safe`: narrow low-risk cleanup candidates
-- `manual_only`: low-confidence or informational findings
 
 The response also keeps a flat `findings` list for backward compatibility. New integrations should consume
 the grouped fields directly so agents do not reimplement classification grouping.
@@ -92,7 +91,7 @@ the grouped fields directly so agents do not reimplement classification grouping
 - `missing_dependencies`: undeclared likely third-party imports
 - `cycles_introduced`: local import edges that would create a cycle
 - `boundary_violations`: local import edges that would violate configured architecture rules
-- `review_needed`: cases such as star imports that are too ambiguous for a safe prediction
+- `decision_needed`: cases such as star imports that are too ambiguous for a safe prediction
 
 ## Release Assets
 
