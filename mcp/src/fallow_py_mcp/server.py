@@ -8,7 +8,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from . import VERSION
-from .schemas import AgentContext, AnalysisResult, Classification, Remediation, VerifyResult
+from .schemas import AgentContext, AnalysisResult, Remediation, SafeToRemoveResult, VerifyResult
 from .runtime import cached_report, module_graph
 from .tools import (
     agent_context_impl,
@@ -55,7 +55,7 @@ def build_server(default_root: str | Path | None = None) -> FastMCP:
         return verify_imports_impl(root_or_default(root), file, planned_imports or [])
 
     @server.tool
-    def safe_to_remove(root: str | None = None, fingerprints: list[str] | None = None) -> dict[str, Classification]:
+    def safe_to_remove(root: str | None = None, fingerprints: list[str] | None = None) -> SafeToRemoveResult:
         return safe_to_remove_impl(root_or_default(root), fingerprints or [])
 
     @server.resource("pyfallow://report/current/{root}")

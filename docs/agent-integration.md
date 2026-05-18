@@ -85,6 +85,14 @@ Blocking findings include parse/config errors, missing runtime dependencies, cir
 The response also keeps a flat `findings` list for backward compatibility. New integrations should consume
 the grouped fields directly so agents do not reimplement classification grouping.
 
+`safe_to_remove` is deliberately conservative. It returns:
+
+- `classifications`: one classification per requested fingerprint
+- `unrecognized`: requested fingerprints that are not present in the current analysis
+
+Agents must treat every `unrecognized` fingerprint as stale or unknown evidence. It is not safe to
+delete code from a fingerprint that cannot be matched to the current report.
+
 `verify_imports` returns:
 
 - `safe`: planned imports that are statically consistent with the current graph/dependency state

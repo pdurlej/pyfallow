@@ -35,7 +35,7 @@ Tools:
 - `analyze_diff`: diff-aware fallow-py findings with `agent-fix-plan` classification
 - `agent_context`: compact project map for coding agents
 - `explain_finding`: deterministic remediation guidance
-- `safe_to_remove`: conservative removal classification
+- `safe_to_remove`: conservative removal classification by fingerprint
 - `verify_imports`: pre-edit prediction for planned imports
 
 `analyze_diff` returns the same grouped policy shape as CLI `--format agent-fix-plan`:
@@ -53,3 +53,23 @@ Tools:
 Agents should prefer the grouped fields (`blocking`, `review_needed`, `auto_safe`, `manual_only`).
 The flat `findings` list is kept for backward compatibility and contains the same findings in grouped
 order.
+
+`safe_to_remove` returns a structured result so agents cannot confuse stale evidence with a current
+finding:
+
+```json
+{
+  "classifications": {
+    "<fingerprint>": {
+      "fingerprint": "<fingerprint>",
+      "decision": "manual_only",
+      "rationale": "Fingerprint was not found in the current analysis; treat it as stale or unknown evidence and do not remove code from it.",
+      "recognized": false
+    }
+  },
+  "unrecognized": ["<fingerprint>"]
+}
+```
+
+Only current, recognized findings can be deletion candidates. Unrecognized fingerprints are stale or
+unknown evidence and must never drive code removal.

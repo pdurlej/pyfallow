@@ -173,3 +173,9 @@ class Classification(BaseModel):
     fingerprint: str
     decision: ClassificationDecision
     rationale: str
+    recognized: bool = True
+
+
+class SafeToRemoveResult(BaseModel):
+    classifications: dict[str, Classification] = Field(default_factory=dict)
+    unrecognized: list[str] = Field(default_factory=list)

@@ -70,6 +70,9 @@ Python is dynamic, so confidence matters:
 - `low`: signal for inspection or uncertainty tracking
 
 Low-confidence dead-code findings should not be auto-deleted.
+Unknown fingerprints should not be auto-deleted either: MCP `safe_to_remove`
+returns them in a separate `unrecognized` list so agents can distinguish stale
+evidence from current findings.
 
 ## Agent Fix-Plan Schema
 
