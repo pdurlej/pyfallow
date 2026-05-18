@@ -21,6 +21,7 @@ from fallow_py.config import ConfigError, load_config
 from fallow_py.dependencies import parse_dependency_declarations
 from fallow_py.models import RULES, VERSION
 from fallow_py.predict import parse_import_spec, verify_imports
+from fallow_py.rule_explain import RULE_GUIDANCE, explain_all_rules, render_explanation
 from fallow_py.sarif import to_sarif
 
 
@@ -1619,6 +1620,39 @@ def test_cli_debug_and_show_limitations_flags_are_observable(tmp_path: Path) -> 
     assert limitations_run.returncode == 0
     assert "Limitations:" in limitations_run.stdout
     assert "Dynamic imports" in limitations_run.stdout
+
+
+def test_cli_explain_rule_by_id_slug_and_all() -> None:
+    json_run = run_cli(["explain", "PY031", "--format", "json"])
+    assert json_run.returncode == 0, json_run.stdout + json_run.stderr
+    payload = json.loads(json_run.stdout)
+    assert payload["rule"] == "unused-symbol"
+    assert payload["id"] == "PY031"
+    assert payload["why_it_matters"]
+    assert payload["false_positive_notes"]
+    assert payload["agent_action"]
+    assert "agent-fix-plan" in payload["action_policy"]
+
+    text_run = run_cli(["explain", "unused-symbol"])
+    assert text_run.returncode == 0, text_run.stdout + text_run.stderr
+    assert "PY031 unused-symbol" in text_run.stdout
+    assert "Common false-positive surfaces:" in text_run.stdout
+
+    all_run = run_cli(["explain", "--all", "--format", "markdown"])
+    assert all_run.returncode == 0, all_run.stdout + all_run.stderr
+    assert "# fallow-py Rules" in all_run.stdout
+    assert "## PY000 parse-error" in all_run.stdout
+    assert "## PY090 risky-hotspot" in all_run.stdout
+
+    missing_run = run_cli(["explain", "PY999"])
+    assert missing_run.returncode == 2
+    assert "unknown fallow-py rule" in missing_run.stderr
+
+
+def test_rule_explanations_cover_rules_and_docs_do_not_drift() -> None:
+    assert set(RULE_GUIDANCE) == set(RULES)
+    rendered = render_explanation(explain_all_rules(), "markdown")
+    assert (ROOT / "docs/rules.md").read_text(encoding="utf-8") == rendered
 
 
 def test_nested_function_complexity_does_not_inflate_parent(tmp_path: Path) -> None:

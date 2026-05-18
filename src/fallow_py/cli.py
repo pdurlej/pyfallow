@@ -12,6 +12,7 @@ from .baseline import compare_with_baseline, create_baseline, read_baseline, wri
 from .config import load_config
 from .formatters import format_agent_context, format_result
 from .models import CONFIDENCE_ORDER, SEVERITY_ORDER, VERSION
+from .rule_explain import explain_all_rules, explain_rule, render_explanation
 from .summary import summary_from_issue_dicts
 
 TEXT_LIMITATION_FORMATS = {"text", "markdown"}
@@ -32,8 +33,10 @@ def main(argv: list[str] | None = None, *, prog: str = "fallow-py") -> int:
         argv = ["analyze", *argv]
     parser = build_parser(prog=prog)
     args = parser.parse_args(argv)
-    _configure_logging(args.debug, prog)
+    _configure_logging(getattr(args, "debug", False), prog)
     try:
+        if args.command == "explain":
+            return _run_explain(args)
         if args.command == "baseline":
             return _run_baseline(args)
         return _run_analysis(args)
@@ -57,6 +60,13 @@ def build_parser(prog: str = "fallow-py") -> argparse.ArgumentParser:
     _add_common(create)
     compare = baseline_sub.add_parser("compare")
     _add_common(compare)
+    explain = sub.add_parser("explain", help="Explain a fallow-py rule id or slug.")
+    explain.add_argument("rule", nargs="?", help="Rule slug such as unused-symbol, or id such as PY031.")
+    explain.add_argument("--all", action="store_true", help="Show all rule explanations.")
+    explain.add_argument("--format", choices=["text", "json", "markdown"], default="text")
+    explain.add_argument("--output")
+    explain.add_argument("--quiet", action="store_true")
+    explain.add_argument("--debug", action="store_true")
     return parser
 
 
@@ -136,6 +146,17 @@ def _run_baseline(args: argparse.Namespace) -> int:
     output = _with_limitations(output, args.format, args.show_limitations)
     _write_or_print(output, args.output)
     return _exit_code(filtered, args.fail_on, baseline_active=True)
+
+
+def _run_explain(args: argparse.Namespace) -> int:
+    if args.all:
+        value = explain_all_rules()
+    elif args.rule:
+        value = explain_rule(args.rule)
+    else:
+        raise ValueError("explain requires a rule id/slug or --all")
+    _write_or_print(render_explanation(value, args.format), args.output)
+    return 0
 
 
 def _configure_logging(debug: bool, prog: str = "fallow-py") -> None:

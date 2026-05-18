@@ -59,6 +59,17 @@ Each issue includes:
 
 `evidence` and `actions` are intentionally extensible. Consumers should tolerate added keys.
 
+Rule ids and slugs can be explained without running analysis:
+
+```bash
+fallow-py explain PY031
+fallow-py explain unused-symbol --format json
+```
+
+The generated rule reference lives in [`rules.md`](rules.md) and is tested
+against the in-code `RULES` registry so new rules cannot silently miss operator
+and agent guidance.
+
 ## Severity And Confidence
 
 Severity describes expected workflow impact. Confidence describes static-analysis certainty.
