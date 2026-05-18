@@ -9,9 +9,8 @@ from typing import Any
 
 GROUPS = [
     ("blocking", "Blocking"),
-    ("review_needed", "Review needed"),
+    ("decision_needed", "Decision needed"),
     ("auto_safe", "Auto-fixable"),
-    ("manual_only", "Manual only"),
 ]
 
 
@@ -41,9 +40,8 @@ def render_comment(plan: dict[str, Any]) -> str:
     lines.append(
         f"**{total} findings on this change** "
         f"({counts['auto_safe']} auto-fixable, "
-        f"{counts['review_needed']} review needed, "
-        f"{counts['blocking']} blocking, "
-        f"{counts['manual_only']} manual only):"
+        f"{counts['decision_needed']} decision needed, "
+        f"{counts['blocking']} blocking):"
     )
     lines.append("")
 

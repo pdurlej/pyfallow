@@ -16,11 +16,12 @@ import fallow_py
 from fallow_py.analysis import analyze
 from fallow_py.ast_index import index_file
 from fallow_py.baseline import compare_with_baseline, create_baseline
-from fallow_py.classify import agent_fix_plan, classify_finding
+from fallow_py.classify import CLASSIFICATION_GROUPS, agent_fix_plan, classify_finding
 from fallow_py.config import ConfigError, load_config
 from fallow_py.dependencies import parse_dependency_declarations
 from fallow_py.models import RULES, VERSION
 from fallow_py.predict import parse_import_spec, verify_imports
+from fallow_py.rule_explain import RULE_GUIDANCE, explain_all_rules, render_explanation
 from fallow_py.sarif import to_sarif
 
 
@@ -1621,6 +1622,39 @@ def test_cli_debug_and_show_limitations_flags_are_observable(tmp_path: Path) -> 
     assert "Dynamic imports" in limitations_run.stdout
 
 
+def test_cli_explain_rule_by_id_slug_and_all() -> None:
+    json_run = run_cli(["explain", "PY031", "--format", "json"])
+    assert json_run.returncode == 0, json_run.stdout + json_run.stderr
+    payload = json.loads(json_run.stdout)
+    assert payload["rule"] == "unused-symbol"
+    assert payload["id"] == "PY031"
+    assert payload["why_it_matters"]
+    assert payload["false_positive_notes"]
+    assert payload["agent_action"]
+    assert "agent-fix-plan" in payload["action_policy"]
+
+    text_run = run_cli(["explain", "unused-symbol"])
+    assert text_run.returncode == 0, text_run.stdout + text_run.stderr
+    assert "PY031 unused-symbol" in text_run.stdout
+    assert "Common false-positive surfaces:" in text_run.stdout
+
+    all_run = run_cli(["explain", "--all", "--format", "markdown"])
+    assert all_run.returncode == 0, all_run.stdout + all_run.stderr
+    assert "# fallow-py Rules" in all_run.stdout
+    assert "## PY000 parse-error" in all_run.stdout
+    assert "## PY090 risky-hotspot" in all_run.stdout
+
+    missing_run = run_cli(["explain", "PY999"])
+    assert missing_run.returncode == 2
+    assert "unknown fallow-py rule" in missing_run.stderr
+
+
+def test_rule_explanations_cover_rules_and_docs_do_not_drift() -> None:
+    assert set(RULE_GUIDANCE) == set(RULES)
+    rendered = render_explanation(explain_all_rules(), "markdown")
+    assert (ROOT / "docs/rules.md").read_text(encoding="utf-8") == rendered
+
+
 def test_nested_function_complexity_does_not_inflate_parent(tmp_path: Path) -> None:
     write(
         tmp_path / "pyproject.toml",
@@ -1987,7 +2021,7 @@ def test_ci_comment_renderer_groups_agent_fix_plan(tmp_path: Path) -> None:
                         "message": "Imported third-party package is not declared.",
                     }
                 ],
-                "review_needed": [
+                "decision_needed": [
                     {
                         "path": "src/billing.py",
                         "range": {"start": {"line": 88}},
@@ -1998,7 +2032,6 @@ def test_ci_comment_renderer_groups_agent_fix_plan(tmp_path: Path) -> None:
                     }
                 ],
                 "auto_safe": [],
-                "manual_only": [],
             }
         )
         + "\n",
@@ -2019,7 +2052,7 @@ def test_ci_comment_renderer_groups_agent_fix_plan(tmp_path: Path) -> None:
     assert "**2 findings on this change**" in result.stdout
     assert "### Blocking (1)" in result.stdout
     assert "`src/orders.py:12` - `missing-runtime-dependency` (high)" in result.stdout
-    assert "### Review needed (1)" in result.stdout
+    assert "### Decision needed (1)" in result.stdout
     assert "`src/billing.py:88` - `unused-symbol` `format_amount` (medium)" in result.stdout
 
 
@@ -2047,32 +2080,33 @@ def minimal_issue(
 
 
 def test_agent_fix_plan_classifies_every_rule_deterministically() -> None:
+    assert CLASSIFICATION_GROUPS == ("auto_safe", "decision_needed", "blocking")
     expected = {
         "parse-error": "blocking",
         "config-error": "blocking",
         "unresolved-import": "blocking",
-        "dynamic-import": "review_needed",
-        "production-imports-test-code": "review_needed",
+        "dynamic-import": "decision_needed",
+        "production-imports-test-code": "decision_needed",
         "circular-dependency": "blocking",
-        "unused-module": "review_needed",
+        "unused-module": "decision_needed",
         "unused-symbol": "auto_safe",
         "stale-suppression": "auto_safe",
         "missing-runtime-dependency": "blocking",
-        "missing-type-dependency": "review_needed",
-        "missing-test-dependency": "review_needed",
+        "missing-type-dependency": "decision_needed",
+        "missing-test-dependency": "decision_needed",
         "dev-dependency-used-in-runtime": "blocking",
-        "optional-dependency-used-in-runtime": "review_needed",
-        "runtime-dependency-used-only-in-tests": "review_needed",
-        "runtime-dependency-used-only-for-types": "review_needed",
-        "unused-runtime-dependency": "review_needed",
-        "duplicate-code": "review_needed",
-        "high-cyclomatic-complexity": "review_needed",
-        "high-cognitive-complexity": "review_needed",
-        "large-function": "review_needed",
-        "large-file": "review_needed",
-        "boundary-violation": "review_needed",
-        "framework-entrypoint-detected": "manual_only",
-        "risky-hotspot": "review_needed",
+        "optional-dependency-used-in-runtime": "decision_needed",
+        "runtime-dependency-used-only-in-tests": "decision_needed",
+        "runtime-dependency-used-only-for-types": "decision_needed",
+        "unused-runtime-dependency": "decision_needed",
+        "duplicate-code": "decision_needed",
+        "high-cyclomatic-complexity": "decision_needed",
+        "high-cognitive-complexity": "decision_needed",
+        "large-function": "decision_needed",
+        "large-file": "decision_needed",
+        "boundary-violation": "decision_needed",
+        "framework-entrypoint-detected": "decision_needed",
+        "risky-hotspot": "decision_needed",
     }
 
     assert set(expected) == set(RULES)
@@ -2080,14 +2114,14 @@ def test_agent_fix_plan_classifies_every_rule_deterministically() -> None:
         assert classify_finding(minimal_issue(rule)).decision == decision
 
     assert classify_finding(minimal_issue("missing-runtime-dependency", "medium")).decision == "blocking"
-    assert classify_finding(minimal_issue("unused-symbol", "medium")).decision == "review_needed"
-    assert classify_finding(minimal_issue("unused-symbol", "low")).decision == "manual_only"
-    assert classify_finding(minimal_issue("unused-module", "low")).decision == "manual_only"
+    assert classify_finding(minimal_issue("unused-symbol", "medium")).decision == "decision_needed"
+    assert classify_finding(minimal_issue("unused-symbol", "low")).decision == "decision_needed"
+    assert classify_finding(minimal_issue("unused-module", "low")).decision == "decision_needed"
     assert (
         classify_finding(
             minimal_issue("circular-dependency", evidence={"type_checking_imports_contributed": True})
         ).decision
-        == "review_needed"
+        == "decision_needed"
     )
     assert classify_finding(minimal_issue("boundary-violation", severity="error")).decision == "blocking"
 
@@ -2101,7 +2135,7 @@ def test_unused_symbol_framework_managed_is_review_not_auto() -> None:
 
     result = classify_finding(issue)
 
-    assert result.decision == "review_needed"
+    assert result.decision == "decision_needed"
     assert "framework" in result.rationale
 
 
@@ -2159,10 +2193,12 @@ def test_agent_fix_plan_format_matches_schema_and_golden(tmp_path: Path) -> None
     actual = {
         "summary": plan["summary"],
         "blocking_rules": sorted({item["rule"] for item in plan["blocking"]}),
-        "review_needed_rules": sorted({item["rule"] for item in plan["review_needed"]}),
+        "decision_needed_rules": sorted({item["rule"] for item in plan["decision_needed"]}),
         "auto_safe_rules": sorted({item["rule"] for item in plan["auto_safe"]}),
     }
     assert actual == golden
+    for item in [*plan["decision_needed"], *plan["blocking"]]:
+        assert item["trade_offs"], item["fingerprint"]
 
 
 def test_agent_fix_plan_cli_with_since_includes_diff_scope(tmp_path: Path) -> None:
@@ -2186,8 +2222,8 @@ def test_agent_fix_plan_cli_with_since_includes_diff_scope(tmp_path: Path) -> No
     assert result.returncode == 0, result.stdout + result.stderr
     plan = json.loads(result.stdout)
     assert plan["diff_scope"]["changed_files"] == ["src/changed.py"]
-    assert plan["summary"]["review_needed_count"] == 2
-    assert {item["rule"] for item in plan["review_needed"]} == {"unused-module", "unused-symbol"}
+    assert plan["summary"]["decision_needed_count"] == 2
+    assert {item["rule"] for item in plan["decision_needed"]} == {"unused-module", "unused-symbol"}
 
     default_result = run_cli(
         ["--root", str(tmp_path), "--since", "HEAD", "--format", "agent-fix-plan"]
@@ -2441,7 +2477,7 @@ def test_soak_prompt_summarizes_fallow_py_evidence_without_full_context(tmp_path
     spec.loader.exec_module(soak_run)
 
     findings = {
-        "summary": {"blocking_count": 1, "review_needed_count": 1},
+        "summary": {"blocking_count": 1, "decision_needed_count": 1},
         "blocking": [
             {
                 "fingerprint": "abc",
@@ -2453,7 +2489,7 @@ def test_soak_prompt_summarizes_fallow_py_evidence_without_full_context(tmp_path
                 "evidence": {"large": "not copied into prompt"},
             }
         ],
-        "review_needed": [
+        "decision_needed": [
             {
                 "fingerprint": "def",
                 "rule": "unused-symbol",
@@ -2464,7 +2500,6 @@ def test_soak_prompt_summarizes_fallow_py_evidence_without_full_context(tmp_path
             }
         ],
         "auto_safe": [],
-        "manual_only": [],
         "limitations": ["Dynamic imports are approximate."],
     }
     path = tmp_path / "findings.json"

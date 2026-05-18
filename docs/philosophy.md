@@ -54,7 +54,7 @@ This is the founding principle. Fallow-py exists to keep that promise.
 
 - **Fallow-py does not have memory between invocations.** Same inputs → same outputs. No "well last time you said X" reasoning.
 
-- **Fallow-py does not gate on opinion-based metrics.** Cyclomatic complexity, file size, etc. are surfaced as `review_needed` (informational), never as `blocking`. Blocking is reserved for findings that are wrong by structural definition (parse errors, unresolved imports, runtime cycles, missing runtime deps, etc.).
+- **Fallow-py does not gate on opinion-based metrics.** Cyclomatic complexity, file size, etc. are surfaced as `decision_needed`, never as `blocking`. Blocking is reserved for findings that are wrong by structural definition (parse errors, unresolved imports, runtime cycles, missing runtime deps, etc.).
 
 - **Fallow-py does not require an LLM to interpret its output.** The CLI prints structured text. The JSON output is deterministic. The MCP tools return typed Pydantic models. Agents and humans read the same data the same way.
 
@@ -62,9 +62,9 @@ This is the founding principle. Fallow-py exists to keep that promise.
 
 1. **Determinism.** Same repo state + same config → same fingerprints, same classification, same exit codes. Replay is a feature.
 
-2. **Single source of truth across transports.** The CLI `--format agent-fix-plan` output, the MCP `analyze_diff` response, the MCP `safe_to_remove` decision — all use the same classification namespace (`auto_safe`, `review_needed`, `blocking`, `manual_only`). One classifier in `src/fallow_py/classify.py`. Every other surface renders, never duplicates.
+2. **Single source of truth across transports.** The CLI `--format agent-fix-plan` output, the MCP `analyze_diff` response, the MCP `safe_to_remove` decision — all use the same classification namespace (`auto_safe`, `decision_needed`, `blocking`). One classifier in `src/fallow_py/classify.py`. Every other surface renders, never duplicates.
 
-3. **Conservative classification.** When in doubt, route to `review_needed` or `manual_only`. `auto_safe` is reserved for findings the analyzer is genuinely confident an agent can act on without human review (high-confidence dead code without framework, entrypoint, public-API, or dynamic-uncertainty flags).
+3. **Conservative classification.** When in doubt, route to `decision_needed` with explicit trade-offs. `auto_safe` is reserved for findings the analyzer is genuinely confident an agent can act on without human review.
 
 4. **Stable fingerprints.** A finding's fingerprint depends on the rule + symbol + canonical evidence, not on traversal artifacts. Cycle paths are canonicalized before hashing (rotated to start at lexicographically-smallest module). Re-running on unchanged code produces unchanged baselines.
 
@@ -78,9 +78,9 @@ If you are an LLM-based agent acting on a codebase that has fallow-py integrated
 
 1. **Before commit, call `fallow-py analyze` (CLI) or the MCP `analyze_diff` tool on your diff.** This is a deterministic check on what you just changed. It is cheap.
 
-2. **Read the classification, not just the message.** `auto_safe` findings are safe to apply with the suggested patch. `review_needed` findings require thinking. `blocking` findings stop the commit. `manual_only` findings are informational.
+2. **Read the classification, not just the message.** `auto_safe` findings are safe to apply with the suggested patch. `decision_needed` findings require thinking and include trade-offs. `blocking` findings stop the commit.
 
-3. **For `unused-symbol` `auto_safe`, you may delete.** For `unused-symbol` `review_needed`, surface to operator.
+3. **For `unused-symbol` `auto_safe`, you may delete.** For `unused-symbol` `decision_needed`, surface to operator with the trade-offs.
 
 4. **For `verify_imports` (MCP only): call before introducing a new import.** It tells you whether the planned import would resolve, hallucinate, cycle, or violate boundaries. Cheaper than discovering at runtime, much cheaper than letting a hallucinated symbol land.
 
