@@ -72,18 +72,25 @@ From a fresh clone:
 ```bash
 python -m pip install -e ".[dev]"
 python -m pytest -q
+python -m fallow_py doctor --root examples/demo_project
 python -m fallow_py analyze --root examples/demo_project --format text
 ```
 
 Without installing:
 
 ```bash
+PYTHONPATH=src python -m fallow_py doctor --root examples/demo_project
 PYTHONPATH=src python -m fallow_py analyze --root examples/demo_project --format text
 ```
+
+Use `doctor` before adding fallow-py to a new repository. It is read-only and
+reports the discovered config, source roots, entrypoints, Git diff availability,
+and next commands.
 
 Generate machine-readable output:
 
 ```bash
+python -m fallow_py doctor --root examples/demo_project --format json
 python -m fallow_py analyze --root examples/demo_project --format json --output /tmp/pyfallow-report.json
 python -m fallow_py analyze --root examples/demo_project --format sarif --output /tmp/pyfallow.sarif
 python -m fallow_py agent-context --root examples/demo_project --format markdown --output /tmp/pyfallow-agent-context.md

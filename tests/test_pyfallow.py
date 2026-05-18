@@ -518,6 +518,59 @@ def test_output_formats_baseline_and_agent_context(tmp_path: Path) -> None:
         assert heading in context_run.stdout
 
 
+def test_doctor_reports_first_run_preflight_for_configured_project(tmp_path: Path) -> None:
+    write(
+        tmp_path / ".fallow-py.toml",
+        """
+        roots = ["src"]
+        entry = ["src/app.py"]
+        """,
+    )
+    write(tmp_path / "src/app.py", "def main():\n    return 1\n")
+    init_git_repo(tmp_path)
+
+    text_run = run_cli(["doctor", "--root", str(tmp_path)])
+
+    assert text_run.returncode == 0, text_run.stdout + text_run.stderr
+    assert "Status: ready" in text_run.stdout
+    assert "Config: .fallow-py.toml" in text_run.stdout
+    assert "Source roots: src" in text_run.stdout
+    assert "Python files: 1" in text_run.stdout
+    assert "Entrypoints: app (explicit-config, high)" in text_run.stdout
+    assert "Git diff: available" in text_run.stdout
+    assert f"fallow-py analyze --root {tmp_path} --format agent-fix-plan" in text_run.stdout
+    assert f"fallow-py analyze --root {tmp_path} --since HEAD~1 --format agent-fix-plan" in text_run.stdout
+
+    json_run = run_cli(["doctor", "--root", str(tmp_path), "--format", "json"])
+
+    assert json_run.returncode == 0, json_run.stdout + json_run.stderr
+    payload = json.loads(json_run.stdout)
+    assert payload["schema"] == "fallow_py_doctor.v1"
+    assert payload["status"] == "ready"
+    assert payload["config"]["found"] is True
+    assert payload["config"]["path"] == ".fallow-py.toml"
+    assert payload["analysis"]["source_roots"] == ["src"]
+    assert payload["analysis"]["files_analyzed"] == 1
+    assert payload["analysis"]["entrypoints"][0]["module"] == "app"
+    assert payload["git"]["available"] is True
+
+
+def test_doctor_without_config_is_actionable_and_read_only(tmp_path: Path) -> None:
+    write(tmp_path / "src/app.py", "def main():\n    return 1\n")
+
+    result = run_cli(["doctor", "--root", str(tmp_path), "--format", "json"])
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ready"
+    assert payload["config"]["found"] is False
+    assert payload["analysis"]["source_roots"] == ["src"]
+    assert payload["analysis"]["entrypoints"][0]["module"] == "app"
+    assert payload["git"]["available"] is False
+    assert "No fallow-py config file found" in payload["notes"][0]
+    assert not (tmp_path / ".fallow-py.toml").exists()
+
+
 def test_release_metadata_version_schema_and_readme_examples() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert fallow_py.__version__ == pyproject["project"]["version"] == VERSION
@@ -565,6 +618,7 @@ def test_release_metadata_version_schema_and_readme_examples() -> None:
         assert json.loads(path.read_text(encoding="utf-8"))
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "python -m fallow_py doctor --root examples/demo_project" in readme
     assert "python -m fallow_py analyze --root examples/demo_project --format text" in readme
     assert "not currently an official fallow-rs/fallow project" in readme
     assert "Runtime dependencies are stdlib-only" in readme
