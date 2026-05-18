@@ -1,0 +1,15 @@
+[[prompt_variants]]
+name = "baseline"
+condition = "model_only"
+description = "Task, repository context, and failing test/reproducer only. No fallow-py feedback."
+
+[[prompt_variants]]
+name = "with-fallow-feedback"
+condition = "model_plus_fallow"
+description = "Task plus controlled fallow-py output before or during iteration."
+
+[[prompt_variants]]
+name = "with-fallow-guardrails"
+condition = "model_plus_fallow"
+description = "Task plus fallow-py output plus explicit no-overclaim/no-delete/no-secret guardrails."
+
