@@ -65,8 +65,10 @@ def module_graph(root: str | Path) -> dict[str, Any]:
 def findings(issues: list[dict[str, Any]]) -> list[Finding]:
     models: list[Finding] = []
     for issue in sorted(issues, key=issue_sort_key):
+        classification = classify_finding(issue)
         payload = dict(issue)
-        payload["classification"] = classify_finding(issue).decision
+        payload["classification"] = classification.decision
+        payload["trade_offs"] = classification.trade_offs
         models.append(Finding(**payload))
     return models
 

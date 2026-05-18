@@ -34,7 +34,7 @@ pyfallow.analyze_diff(
 
 ## Step 3: Classify Findings
 
-With `--format agent-fix-plan`, pyfallow returns `auto_safe`, `review_needed`, `blocking`, and `manual_only` groups directly. With MCP `analyze_diff`, use each finding's `classification`; call `explain_finding` when you need remediation details:
+With `--format agent-fix-plan`, pyfallow returns `auto_safe`, `decision_needed`, and `blocking` groups directly. With MCP `analyze_diff`, use each finding's `classification`; call `explain_finding` when you need remediation details:
 
 ```text
 pyfallow.explain_finding(root=<workspace_root>, fingerprint=<fingerprint>)
@@ -43,7 +43,7 @@ pyfallow.explain_finding(root=<workspace_root>, fingerprint=<fingerprint>)
 Use the returned `classification`:
 
 - `auto_safe`: low-risk cleanup where the explanation provides a specific minimal action
-- `review_needed`: plausible issue, but static uncertainty or product intent matters
+- `decision_needed`: plausible issue, but static uncertainty or product intent matters; include the trade-offs when escalating
 - `blocking`: must be resolved or explicitly waived before commit
 
 ## Step 4: Auto-Fix Safe Findings
@@ -121,7 +121,7 @@ Treat `hallucinated`, `cycles_introduced`, `boundary_violations`, and `missing_d
 ## Anti-Patterns
 
 - Skipping pyfallow because tests pass.
-- Treating `review_needed` as safe to auto-fix.
+- Treating `decision_needed` as safe to auto-fix.
 - Hiding `blocking` findings in a TODO.
 - Making broad refactors to silence one finding.
 - Re-running until findings disappear through unrelated edits.

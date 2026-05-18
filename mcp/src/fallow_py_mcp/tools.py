@@ -31,9 +31,8 @@ def analyze_diff_impl(
         summary=SummaryCounts(**filtered["summary"]),
         diff_scope=DiffScope(**filtered["analysis"].get("diff_scope", {})),
         auto_safe=grouped["auto_safe"],
-        review_needed=grouped["review_needed"],
+        decision_needed=grouped["decision_needed"],
         blocking=grouped["blocking"],
-        manual_only=grouped["manual_only"],
         findings=finding_models,
         truncated=truncated,
         next_cursor=None,
@@ -49,4 +48,5 @@ def verify_imports_impl(root: str | Path, file: str, planned_imports: list[str])
 def _finding_model(issue: dict[str, Any], classification: ClassificationResult) -> Finding:
     payload = dict(issue)
     payload["classification"] = classification.decision
+    payload["trade_offs"] = classification.trade_offs
     return Finding(**payload)

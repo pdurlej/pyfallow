@@ -11,9 +11,8 @@
     "source_report_schema_version",
     "summary",
     "auto_safe",
-    "review_needed",
+    "decision_needed",
     "blocking",
-    "manual_only",
     "limitations"
   ],
   "properties": {
@@ -27,23 +26,20 @@
       "additionalProperties": false,
       "required": [
         "auto_safe_count",
-        "review_needed_count",
+        "decision_needed_count",
         "blocking_count",
-        "manual_only_count",
         "total"
       ],
       "properties": {
         "auto_safe_count": { "type": "integer", "minimum": 0 },
-        "review_needed_count": { "type": "integer", "minimum": 0 },
+        "decision_needed_count": { "type": "integer", "minimum": 0 },
         "blocking_count": { "type": "integer", "minimum": 0 },
-        "manual_only_count": { "type": "integer", "minimum": 0 },
         "total": { "type": "integer", "minimum": 0 }
       }
     },
     "auto_safe": { "type": "array", "items": { "$ref": "#/$defs/item" } },
-    "review_needed": { "type": "array", "items": { "$ref": "#/$defs/item" } },
+    "decision_needed": { "type": "array", "items": { "$ref": "#/$defs/item" } },
     "blocking": { "type": "array", "items": { "$ref": "#/$defs/item" } },
-    "manual_only": { "type": "array", "items": { "$ref": "#/$defs/item" } },
     "limitations": { "type": "array", "items": { "type": "string" } }
   },
   "$defs": {
@@ -103,6 +99,7 @@
         "confidence",
         "one_liner",
         "rationale",
+        "trade_offs",
         "minimal_patch",
         "investigation_hints",
         "fix_options"
@@ -119,6 +116,7 @@
         "confidence": { "enum": ["low", "medium", "high"] },
         "one_liner": { "type": "string" },
         "rationale": { "type": "string" },
+        "trade_offs": { "type": "array", "items": { "type": "string" } },
         "minimal_patch": {
           "anyOf": [
             { "$ref": "#/$defs/minimalPatch" },

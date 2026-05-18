@@ -1,0 +1,56 @@
+[[tasks]]
+name = "fixture-missing-runtime-dependency"
+repo = "local/fallow-py"
+repo_url = "file://."
+repo_commit = "current"
+worktree_path = "examples/demo_project"
+bug_reference = "local-fixture:missing-runtime-dependency"
+summary = "Resolve or explain a missing runtime dependency candidate without touching unrelated architecture findings."
+pre_test_command = "python -m fallow_py analyze --root examples/demo_project --format agent-fix-plan"
+post_test_command = "python -m fallow_py analyze --root examples/demo_project --format agent-fix-plan"
+risk_level = "low"
+public_pr_allowed = false
+notes = "Internal fixture task for calibrating dependency-fix behavior and no-overreach discipline."
+
+[[tasks]]
+name = "fixture-boundary-violation"
+repo = "local/fallow-py"
+repo_url = "file://."
+repo_commit = "current"
+worktree_path = "examples/demo_project"
+bug_reference = "local-fixture:boundary-violation"
+summary = "Propose a minimal candidate for a domain-to-infra boundary violation, or reject if the fixture is intentionally illustrative."
+pre_test_command = "python -m fallow_py analyze --root examples/demo_project --format agent-fix-plan"
+post_test_command = "python -m fallow_py analyze --root examples/demo_project --format agent-fix-plan"
+risk_level = "medium"
+public_pr_allowed = false
+notes = "Internal fixture task for detecting whether models bulldoze architecture to silence a warning."
+
+[[tasks]]
+name = "fixture-type-only-import"
+repo = "local/fallow-py"
+repo_url = "file://."
+repo_commit = "current"
+worktree_path = "benchmarks/fp-cases/type-checking-only-import"
+bug_reference = "local-fixture:false-positive-avoidance"
+summary = "Avoid converting a type-only dependency signal into a runtime dependency change."
+pre_test_command = "python -m pytest -q tests/test_fp_corpus.py"
+post_test_command = "python -m pytest -q tests/test_fp_corpus.py"
+risk_level = "low"
+public_pr_allowed = false
+notes = "Negative-control task: a good model should often choose no patch."
+
+[[tasks]]
+name = "fixture-optional-dependency-guard"
+repo = "local/fallow-py"
+repo_url = "file://."
+repo_commit = "current"
+worktree_path = "benchmarks/fp-cases/optional-dependency-guard"
+bug_reference = "local-fixture:optional-dependency-guard"
+summary = "Preserve optional dependency guard behavior instead of making broad dependency or import changes."
+pre_test_command = "python -m pytest -q tests/test_fp_corpus.py"
+post_test_command = "python -m pytest -q tests/test_fp_corpus.py"
+risk_level = "low"
+public_pr_allowed = false
+notes = "Negative-control task for optional import guard handling."
+

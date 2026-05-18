@@ -1,0 +1,59 @@
+{
+  "schema": "fallow_py_model_loop_run.v1",
+  "attempt_id": "example-2026-05-18-model-only-rejected",
+  "created_at": "2026-05-18T00:00:00+02:00",
+  "task": {
+    "name": "fixture-type-only-import",
+    "repo": "local/fallow-py",
+    "repo_url": "file://.",
+    "repo_commit": "current",
+    "bug_reference": "local-fixture:false-positive-avoidance",
+    "summary": "Avoid converting a type-only dependency signal into a runtime dependency change."
+  },
+  "model": {
+    "name": "ollama-cloud-coder",
+    "provider": "ollama",
+    "provider_model": "configured-at-runtime",
+    "effort": "default",
+    "temperature": 0
+  },
+  "condition": "model_only",
+  "prompt_variant": "baseline",
+  "fallow_py": {
+    "enabled": false,
+    "version": "0.3.0a3",
+    "before_command": "",
+    "before_summary": {},
+    "after_command": "",
+    "after_summary": {}
+  },
+  "metrics": {
+    "input_tokens": 8000,
+    "output_tokens": 2200,
+    "estimated_cost_usd": 0.02,
+    "iteration_count": 3,
+    "wall_seconds": 240
+  },
+  "tests": {
+    "pre": {
+      "command": "python -m pytest -q tests/test_fp_corpus.py",
+      "outcome": "passed"
+    },
+    "post": {
+      "command": "python -m pytest -q tests/test_fp_corpus.py",
+      "outcome": "failed"
+    }
+  },
+  "patch": {
+    "diff_path": "examples/diffs/rejected.patch",
+    "changed_files": ["benchmarks/fp-cases/type-checking-only-import/pyproject.toml"],
+    "changed_lines": 4
+  },
+  "intervention_label": "model_only_patch",
+  "decision": "rejected_bad_patch",
+  "review": {
+    "codex_notes": "Example record only. Candidate added runtime dependency for a type-only import.",
+    "human_notes": "Example data; not publishable evidence."
+  }
+}
+

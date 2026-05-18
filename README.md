@@ -72,18 +72,25 @@ From a fresh clone:
 ```bash
 python -m pip install -e ".[dev]"
 python -m pytest -q
+python -m fallow_py doctor --root examples/demo_project
 python -m fallow_py analyze --root examples/demo_project --format text
 ```
 
 Without installing:
 
 ```bash
+PYTHONPATH=src python -m fallow_py doctor --root examples/demo_project
 PYTHONPATH=src python -m fallow_py analyze --root examples/demo_project --format text
 ```
+
+Use `doctor` before adding fallow-py to a new repository. It is read-only and
+reports the discovered config, source roots, entrypoints, Git diff availability,
+and next commands.
 
 Generate machine-readable output:
 
 ```bash
+python -m fallow_py doctor --root examples/demo_project --format json
 python -m fallow_py analyze --root examples/demo_project --format json --output /tmp/pyfallow-report.json
 python -m fallow_py analyze --root examples/demo_project --format sarif --output /tmp/pyfallow.sarif
 python -m fallow_py agent-context --root examples/demo_project --format markdown --output /tmp/pyfallow-agent-context.md
@@ -142,6 +149,15 @@ Recommended workflow:
 5. Do not auto-delete low-confidence or framework-adjacent dead code.
 6. Rerun fallow-py after edits and compare new/resolved findings.
 
+When a finding is unclear, ask fallow-py for the rule contract:
+
+```bash
+python -m fallow_py explain PY031
+python -m fallow_py explain unused-symbol --format markdown
+```
+
+The same rule reference is available in [`docs/rules.md`](docs/rules.md).
+
 ## Agent Fix-Plan Format
 
 Use `agent-fix-plan` when an AI agent needs a native cleanup plan rather than the full report:
@@ -153,9 +169,8 @@ python -m fallow_py analyze --root . --since HEAD --format agent-fix-plan
 The plan groups findings by action policy:
 
 - `auto_safe`: deterministic low-risk cleanup candidates; fallow-py currently emits a concrete minimal patch only for stale suppressions.
-- `review_needed`: useful structural signals that need human or agent reasoning with project context.
+- `decision_needed`: useful structural signals that need human, agent, or product-context judgment. Items in this bucket include `trade_offs` so the operator can see why automatic action is unsafe.
 - `blocking`: parse/config errors, missing runtime dependencies, enforced boundary violations, unresolved imports, and runtime import cycles.
-- `manual_only`: low-confidence or informational findings that should not drive automated edits.
 
 This format is meant to work alongside ruff, mypy/pyright, tests, and human review. It is not a replacement for those tools; it gives agents a deterministic slop-prevention checklist before they claim work is done.
 
@@ -209,7 +224,7 @@ Available tools:
 - `agent_context`: structured project map for agents
 - `explain_finding`: remediation hints for a finding fingerprint
 - `verify_imports`: pre-edit prediction for planned imports, including missing modules/symbols, undeclared third-party packages, cycles, and boundary violations
-- `safe_to_remove`: deterministic dead-code safety classification
+- `safe_to_remove`: deterministic dead-code safety classification, including explicit `unrecognized` fingerprints for stale evidence
 
 The MCP package also exposes report and module-graph resources plus `pre-commit-check` and `pr-cleanup` prompts.
 

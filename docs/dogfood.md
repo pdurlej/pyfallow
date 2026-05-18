@@ -13,7 +13,7 @@
 After integrating fallow-py into a Forgejo Actions workflow on a Python project:
 
 - Every PR runs `fallow-py analyze` on the diff
-- Findings are classified (`auto_safe` / `review_needed` / `blocking` / `manual_only`)
+- Findings are classified (`auto_safe` / `decision_needed` / `blocking`)
 - A comment is posted on the PR with the agent-fix-plan output
 - The job fails if there are `blocking` findings or warnings above threshold
 - Artifacts (`pyfallow-report.json`, agent-readable feedback) are uploaded for the next agent in the chain to read
@@ -26,7 +26,19 @@ The agent that opened the PR (Codex, Claude, etc.) gets a deterministic answer t
 - Python project with at least one `pyproject.toml` declaring entry points
 - The repo's runner can pull container images and install Python packages from PyPI (or TestPyPI during fallow-py alpha)
 
-## Minimal integration (3 steps)
+## Minimal integration (4 steps)
+
+### Step 0 - run first-run doctor
+
+Before adding CI, run a read-only preflight from the project root:
+
+```bash
+fallow-py doctor --root .
+```
+
+This reports the discovered config, source roots, entrypoints, Git diff
+availability, and next commands. If it says no config file was found, add the
+minimal `.fallow-py.toml` in Step 3 before treating CI output as stable.
 
 ### Step 1 — copy the workflow
 
@@ -82,6 +94,14 @@ entry = ["src/yourproject/main.py", "src/yourproject/cli.py"]
 
 Then commit, push, open a PR. The runner pulls fallow-py, runs analyze on your diff, posts the comment, fails on blocking findings.
 
+Run doctor again after adding the config:
+
+```bash
+fallow-py doctor --root . --format json
+```
+
+Agents can keep this JSON as first-run evidence before enabling the CI gate.
+
 ## Reading the CI comment as operator
 
 The fallow-py comment on a PR will look like:
@@ -99,7 +119,7 @@ The fallow-py comment on a PR will look like:
 ### Auto-safe
 - (none)
 
-### Review needed
+### Decision needed
 - src/yourproject/utils.py:15 — unused-symbol `legacy_helper`
   Top-level function 'legacy_helper' is not referenced by analyzed modules.
   (medium confidence — could be framework-managed)
@@ -111,7 +131,7 @@ The fallow-py comment on a PR will look like:
 |---|---|
 | All green ("No findings...") | Merge if review otherwise OK |
 | Only `auto_safe` findings | Tell the agent: "apply the suggested patches in your next commit" |
-| `review_needed` findings | Read them. Decide: legitimate FP (suppress) or real (fix) |
+| `decision_needed` findings | Read the finding and its trade-offs. Decide: legitimate FP (suppress), real issue (fix), or accepted risk |
 | `blocking` findings | **Send the PR back to the agent.** This is the whole point — fallow-py caught what the agent missed |
 
 **Anti-pattern:** "the CI is red but the change looks fine, let me merge anyway." Don't. The agent that opened this PR is supposed to call fallow-py before pushing — if it didn't, that's an agent integrity failure that needs to surface, not be hidden.
@@ -133,13 +153,12 @@ If your platform has a "next-agent picks up here" pattern (e.g., Codex reading P
   "version": "0.3.0a3",
   "summary": {
     "auto_safe_count": 0,
-    "review_needed_count": 1,
+    "decision_needed_count": 1,
     "blocking_count": 1,
-    "manual_only_count": 0,
     "total": 2
   },
   "auto_safe": [],
-  "review_needed": [
+  "decision_needed": [
     {
       "fingerprint": "...",
       "rule": "unused-symbol",
@@ -147,16 +166,18 @@ If your platform has a "next-agent picks up here" pattern (e.g., Codex reading P
       "file": "src/yourproject/utils.py",
       "line": 15,
       "symbol": "legacy_helper",
-      ...
+      "trade_offs": [
+        "Removing it may be correct if it is genuinely unreachable.",
+        "Keeping it may be necessary if it is used dynamically, exported, or framework-managed."
+      ]
     }
   ],
   "blocking": [...],
-  "manual_only": [],
   "limitations": [...]
 }
 ```
 
-An agent acting on this: iterate through `auto_safe` and apply patches; iterate through `blocking` and fix the root cause; surface `review_needed` to operator.
+An agent acting on this: iterate through `auto_safe` and apply patches; iterate through `blocking` and fix the root cause; surface `decision_needed` to operator with the included trade-offs.
 
 ## Identity-isolation for agents
 

@@ -59,6 +59,17 @@ Each issue includes:
 
 `evidence` and `actions` are intentionally extensible. Consumers should tolerate added keys.
 
+Rule ids and slugs can be explained without running analysis:
+
+```bash
+fallow-py explain PY031
+fallow-py explain unused-symbol --format json
+```
+
+The generated rule reference lives in [`rules.md`](rules.md) and is tested
+against the in-code `RULES` registry so new rules cannot silently miss operator
+and agent guidance.
+
 ## Severity And Confidence
 
 Severity describes expected workflow impact. Confidence describes static-analysis certainty.
@@ -70,6 +81,9 @@ Python is dynamic, so confidence matters:
 - `low`: signal for inspection or uncertainty tracking
 
 Low-confidence dead-code findings should not be auto-deleted.
+Unknown fingerprints should not be auto-deleted either: MCP `safe_to_remove`
+returns them in a separate `unrecognized` list so agents can distinguish stale
+evidence from current findings.
 
 ## Agent Fix-Plan Schema
 
@@ -78,11 +92,10 @@ Low-confidence dead-code findings should not be auto-deleted.
 The fix-plan groups findings into:
 
 - `auto_safe`: deterministic low-risk cleanup candidates. In v0.3, concrete `minimal_patch` data is only emitted for stale suppressions.
-- `review_needed`: findings that are useful agent context but require product or architecture judgment.
+- `decision_needed`: findings that are useful agent context but require product, architecture, or dynamic-runtime judgment.
 - `blocking`: findings that should stop commit/ship flows unless resolved or explicitly waived.
-- `manual_only`: low-confidence or informational findings preserved as context.
 
-Each item keeps the original `fingerprint`, rule id, file/line, confidence, one-line summary, rationale, investigation hints, and deterministic fix options. This is designed for agents to consume directly without re-parsing general-purpose JSON.
+Each item keeps the original `fingerprint`, rule id, file/line, confidence, one-line summary, rationale, investigation hints, deterministic fix options, and trade-offs for non-auto decisions. This is designed for agents to consume directly without re-parsing general-purpose JSON.
 
 ## Graphs
 

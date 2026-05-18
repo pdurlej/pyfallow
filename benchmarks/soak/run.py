@@ -241,7 +241,7 @@ def build_guarded_prompt(repo: Repo) -> str:
         "Hard guardrails:\n"
         f"{guardrail_lines}\n\n"
         "Use only local repository files and the generated fallow-py agent-fix-plan. "
-        "Classify findings by auto_safe, review_needed, blocking, and manual_only only when the "
+        "Classify findings by auto_safe, decision_needed, and blocking only when the "
         "fallow-py output contains that evidence.\n\n"
         "Return concise Markdown with these exact headings:\n"
         "1. Findings used\n"
@@ -353,7 +353,7 @@ def summarize_agent_fix_plan(path: Path) -> dict[str, Any]:
             "reason": f"findings file is not valid JSON: {exc}",
             "path": str(path),
         }
-    buckets = ["blocking", "review_needed", "auto_safe", "manual_only"]
+    buckets = ["blocking", "decision_needed", "auto_safe"]
     findings: list[dict[str, Any]] = []
     for bucket in buckets:
         for issue in data.get(bucket, []):
